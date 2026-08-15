@@ -1,4 +1,5 @@
 import { chromium } from 'playwright-core'
+import assert from 'node:assert/strict'
 
 const baseURL = 'http://127.0.0.1:5174'
 const executablePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
@@ -74,8 +75,24 @@ async function testRole(browser, role, viewport) {
     await page.getByText('James', { exact: true }).click()
     await expectVisible(page, 'Required total')
     await clickNav(page, 'Deposit review')
-    await page.getByRole('button', { name: /Approved/ }).click()
+    await page.getByText('DEP-SUB', { exact: true }).click()
+    await page.getByRole('button', { name: 'Approve deposit' }).click()
+    const approvedWhatsapp = page.getByRole('link', { name: 'Send WhatsApp message to Member Two' })
+    await approvedWhatsapp.waitFor({ state: 'visible' })
+    assert.match(new URL(await approvedWhatsapp.getAttribute('href')).searchParams.get('text') || '', /Deposit: DEP-SUB/)
+    await page.getByRole('button', { name: /^Approved \(/ }).click()
     await expectVisible(page, 'DEP-OK')
+    await page.getByText('DEP-OK', { exact: true }).click()
+    const whatsapp = page.getByRole('link', { name: 'Send WhatsApp message to Member Two' })
+    await whatsapp.waitFor({ state: 'visible' })
+    const whatsappUrl = new URL(await whatsapp.getAttribute('href'))
+    assert.equal(whatsappUrl.hostname, 'wa.me')
+    assert.equal(whatsappUrl.pathname, '/919447000001')
+    const whatsappMessage = whatsappUrl.searchParams.get('text') || ''
+    assert.match(whatsappMessage, /₹500/)
+    assert.match(whatsappMessage, /Bank: Test Bank/)
+    assert.match(whatsappMessage, /Deposit: DEP-OK/)
+    assert.match(whatsappMessage, /Reference: REF-OK/)
     await page.getByRole('button', { name: /Rejected/ }).click()
     await expectVisible(page, 'DEP-NO')
     await clickNav(page, 'Members')

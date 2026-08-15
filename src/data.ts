@@ -60,6 +60,7 @@ export interface DepositRecord {
   agent: string
   taluk: string
   bank: string
+  bankName: string
   calculated: number
   declared: number
   submitted: string

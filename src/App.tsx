@@ -4,7 +4,7 @@ import {
   AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Banknote, Bell, BookOpen, CalendarDays,
   Check, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Clock3, Download,
   Eye, EyeOff, FileCheck2, HandCoins, HeartHandshake, Home, IndianRupee, Landmark,
-  ListChecks, LockKeyhole, LogOut, Menu, MessageSquareText, MoreVertical, Pencil, Plus, Receipt,
+  ListChecks, LockKeyhole, LogOut, Menu, MessageCircle, MessageSquareText, MoreVertical, Pencil, Plus, Receipt,
   Search, Settings, ShieldCheck, Smartphone, UserRound, Users, WalletCards, WifiOff, X,
   XCircle, type LucideIcon
 } from 'lucide-react'
@@ -40,6 +40,16 @@ const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
   const link = document.createElement('a')
   link.href = url; link.download = filename; link.click()
   URL.revokeObjectURL(url)
+}
+const whatsappNumber = (phone: string) => {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `91${digits}`
+  if (digits.length === 11 && digits.startsWith('0')) return `91${digits.slice(1)}`
+  return digits.length >= 8 && digits.length <= 15 ? digits : ''
+}
+const whatsappLink = (phone: string, message: string) => {
+  const number = whatsappNumber(phone)
+  return number ? `https://wa.me/${number}?text=${encodeURIComponent(message)}` : ''
 }
 const toSession = (profile: ApiProfile): Session => ({
   id: profile.id, role: profile.role.toLowerCase() as Role, name: profile.full_name,
@@ -89,6 +99,7 @@ function mapWorkspace(raw: Workspace) {
   }))
   const deposits: DepositRecord[] = raw.deposits.map(item => ({
     id: String(item.id), number: String(item.deposit_number), agent: String(item.agent_name), taluk: String(item.taluk_name),
+    bankName: String(item.bank_name || 'Assigned bank'),
     bank: `${item.bank_name}${item.bank_last4 ? ` •••• ${item.bank_last4}` : ''}`,
     calculated: Number(item.calculated_total), declared: Number(item.declared_deposit_amount),
     submitted: dateTimeText(String(item.submitted_at || item.created_at)), status: titleCase(String(item.status)) as DepositRecord['status'],
@@ -520,10 +531,47 @@ function AgentDeposits({ online, collections, setCollections: _setCollections, d
 }
 
 function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCollections: _setCollections, online, notify, reload }: { deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; online: boolean; notify: (message: string, tone?: Toast['tone']) => void; reload: () => Promise<void> }) {
+  const { members } = useAppData()
   const [selected, setSelected] = useState<DepositRecord | null>(null)
   const [filter, setFilter] = useState<'Submitted' | 'Approved' | 'Rejected'>('Submitted')
   const [reviewing, setReviewing] = useState(false)
   const filteredDeposits = deposits.filter(deposit => deposit.status === filter)
+  const selectedCollections = useMemo(
+    () => selected ? collections.filter(collection => selected.collectionIds.includes(collection.id)) : [],
+    [collections, selected],
+  )
+  const memberNotifications = useMemo(() => {
+    const grouped = new Map<string, { id: string; name: string; phone: string; amount: number; labels: string[] }>()
+    selectedCollections.forEach(collection => {
+      const member = members.find(item => item.id === collection.memberId)
+      const existing = grouped.get(collection.memberId)
+      if (existing) {
+        existing.amount += collection.amount
+        if (!existing.labels.includes(collection.label)) existing.labels.push(collection.label)
+      } else {
+        grouped.set(collection.memberId, {
+          id: collection.memberId,
+          name: member?.name || collection.member,
+          phone: member?.phone || '',
+          amount: collection.amount,
+          labels: [collection.label],
+        })
+      }
+    })
+    return [...grouped.values()]
+  }, [members, selectedCollections])
+  const messageFor = (member: (typeof memberNotifications)[number]) => [
+    'Karunya Sparsham',
+    '',
+    `Hello ${member.name},`,
+    `Your payment of ${formatMoney(member.amount)} has been deposited and verified.`,
+    '',
+    `Bank: ${selected?.bankName || 'Assigned bank'}`,
+    `Deposit: ${selected?.number || ''}`,
+    `Reference: ${selected?.reference || 'Not provided'}`,
+    '',
+    'Thank you.',
+  ].join('\n')
   const filterCopy = filter === 'Submitted'
     ? { title: 'No deposits awaiting review', detail: 'An agent must submit a deposit batch before it can be approved or rejected.' }
     : { title: `No ${filter.toLowerCase()} deposits`, detail: `Deposits marked ${filter.toLowerCase()} will appear here.` }
@@ -538,9 +586,11 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
     setReviewing(true)
     try {
       await workspaceApi.reviewDeposit(selected.id, selected.version || 1, decision === 'Approved', reason)
+      const reviewedDeposit: DepositRecord = { ...selected, status: decision, version: (selected.version || 1) + 1 }
       await reload()
-      setSelected(null)
-      notify(decision === 'Approved' ? 'Deposit approved. Included members were notified.' : 'Deposit rejected and collections released.', decision === 'Rejected' ? 'danger' : 'success')
+      setFilter(decision)
+      setSelected(decision === 'Approved' ? reviewedDeposit : null)
+      notify(decision === 'Approved' ? 'Deposit approved. Send WhatsApp messages from the member list.' : 'Deposit rejected and collections released.', decision === 'Rejected' ? 'danger' : 'success')
     } catch (error) {
       notify(error instanceof Error ? error.message : `Unable to ${decision.toLowerCase()} the deposit.`, 'danger')
     } finally {
@@ -565,7 +615,23 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
           <div className="amount-match"><div><span>Calculated total</span><strong>{formatMoney(selected.calculated)}</strong></div><div><span>Declared deposit</span><strong>{formatMoney(selected.declared)}</strong></div><p className={selected.calculated === selected.declared ? 'match' : 'mismatch'}>{selected.calculated === selected.declared ? <CheckCircle2 /> : <AlertCircle />}{selected.calculated === selected.declared ? 'Amounts match exactly' : 'Approval blocked: total mismatch'}</p></div>
           <dl className="review-data"><div><dt>Destination bank</dt><dd>{selected.bank}</dd></div><div><dt>Bank reference</dt><dd>{selected.reference}</dd></div><div><dt>Receipt</dt><dd>Not provided</dd></div></dl>
           <SectionHeading title="Collection entries" />
-          <div className="selected-items">{selected.collectionIds.length ? collections.filter(c => selected.collectionIds.includes(c.id)).map(c => <div key={c.id}><span>{c.member}<small>{c.label}</small></span><strong>{formatMoney(c.amount)}</strong></div>) : <div><span>Multiple verified entries<small>Item breakdown retained in batch</small></span><strong>{formatMoney(selected.calculated)}</strong></div>}</div>
+          <div className="selected-items">
+            {selected.collectionIds.length ? (selected.status === 'Approved'
+              ? memberNotifications.map(member => {
+                const href = whatsappLink(member.phone, messageFor(member))
+                return <div key={member.id}>
+                  <span>{member.name}<small>{member.labels.join(', ')}</small></span>
+                  <div className="selected-item-actions">
+                    <strong>{formatMoney(member.amount)}</strong>
+                    {href
+                      ? <a className="small-action whatsapp-action" href={href} target="_blank" rel="noreferrer" aria-label={`Send WhatsApp message to ${member.name}`}><MessageCircle />WhatsApp</a>
+                      : <span className="whatsapp-unavailable">No WhatsApp number</span>}
+                  </div>
+                </div>
+              })
+              : selectedCollections.map(collection => <div key={collection.id}><span>{collection.member}<small>{collection.label}</small></span><strong>{formatMoney(collection.amount)}</strong></div>))
+              : <div><span>Multiple verified entries<small>Item breakdown retained in batch</small></span><strong>{formatMoney(selected.calculated)}</strong></div>}
+          </div>
           {selected.status === 'Submitted' && <div className="review-actions"><button className="danger-btn" disabled={!online || reviewing} onClick={() => review('Rejected')}><XCircle /> {reviewing ? 'Working...' : 'Reject'}</button><button className="primary" disabled={!online || reviewing || selected.calculated !== selected.declared} onClick={() => review('Approved')}><CheckCircle2 /> {reviewing ? 'Working...' : 'Approve deposit'}</button></div>}
         </> : <div className="empty-review"><FileCheck2 /><h3>{filteredDeposits.length ? `Select a ${filter.toLowerCase()} deposit` : filterCopy.title}</h3><p>{filteredDeposits.length ? (filter === 'Submitted' ? 'Review the calculated total, bank details, and collection entries before deciding.' : 'Select a deposit from the list to view its details.') : filterCopy.detail}</p></div>}
       </section>
