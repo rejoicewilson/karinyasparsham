@@ -174,7 +174,7 @@ export default function App() {
     setSession(null); setData(emptyData); setCollections([]); setDeposits([]); navigate('/')
   }
 
-  if (booting) return <main className="loading-screen"><img src="/logo.png" alt="" /><p>Loading secure session…</p></main>
+  if (booting) return <main className="loading-screen"><img src="/logo.png" alt="" /><p>Loading secure session...</p></main>
   if (!session) return <Login onLogin={login} />
   if (passwordRequired) return <PasswordChange session={session} onComplete={async () => { setPasswordRequired(false); await loadWorkspace(); navigate(`/${session.role}/dashboard`) }} onLogout={logout} />
 

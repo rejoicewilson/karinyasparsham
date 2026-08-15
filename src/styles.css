@@ -28,6 +28,21 @@ h1, h2, h3, strong { letter-spacing: 0; }
 h1, h2, h3 { font-family: 'Manrope', system-ui, sans-serif; }
 svg { width: 20px; height: 20px; stroke-width: 1.9; flex: 0 0 auto; }
 
+.loading-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  padding: 24px;
+  background: #f5f8f6;
+  color: var(--muted);
+  text-align: center;
+}
+.loading-screen img { width: 96px; height: 96px; max-width: 30vw; object-fit: contain; }
+.loading-screen p { font-size: 14px; font-weight: 600; }
+
 .login-page { width: 100%; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; background: #f5f8f6; }
 .login-brand { display: none; }
 .login-panel { width: min(100%, 460px); min-width: 0; margin: auto; padding: 28px 24px 40px; overflow: hidden; }
