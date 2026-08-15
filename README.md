@@ -10,9 +10,8 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The login page includes preview access for each
-role so the member, agent, and admin workflows can be reviewed without external
-credentials.
+Open `http://localhost:5174`. The frontend proxies same-origin `/api` requests
+to the FastAPI development server on port `8001`.
 
 ## Production build
 
@@ -37,9 +36,8 @@ The optimized installable PWA is written to `dist/`.
   online-only financial controls
 
 The supplied organization logo is used for app branding and install icons.
-The current build uses in-browser demonstration records so every role and
-workflow can be evaluated before Supabase project credentials and the FastAPI
-deployment are connected.
+Application records and authentication are loaded from the FastAPI and Supabase
+integration; the production UI does not contain demonstration records.
 
 ## FastAPI backend
 
@@ -58,13 +56,13 @@ python -m alembic -c backend\alembic.ini upgrade head
 python -m alembic -c backend\alembic.ini current
 ```
 
-Start FastAPI on port 8000:
+Start FastAPI on port 8001:
 
 ```powershell
-python -m uvicorn app.main:app --app-dir backend --reload --port 8000
+python -m uvicorn app.main:app --app-dir backend --reload --port 8001
 ```
 
-Development API documentation is available at `http://localhost:8000/docs`.
+Development API documentation is available at `http://localhost:8001/docs`.
 Health endpoints are `/health/live` and `/health/ready`.
 
 After the first migration, bootstrap the initial administrator:
@@ -83,3 +81,25 @@ ledger schema, notification outbox, audit storage, financial constraints,
 idempotency records, indexes, default-deny RLS configuration, controlled
 database triggers, and private Supabase Storage buckets. The versioned SQL
 payload is in `backend/alembic/sql/0001_initial_schema.sql`.
+
+## Vercel deployment
+
+The repository includes `vercel.json` and `api/index.py` so the Vite PWA and
+FastAPI API deploy together on one Vercel domain.
+
+1. Import `rejoicewilson/karinyasparsham` in Vercel and keep the repository root
+   as the project root.
+2. Keep the detected framework as **Vite**. Build and routing settings come from
+   `vercel.json`.
+3. Add the backend variables from `.env.example` to the Vercel project for
+   Production and Preview. Set `APP_ENV=production`.
+4. Set `APP_BASE_URL` and `ALLOWED_ORIGINS` to the production
+   `https://<project>.vercel.app` URL. Set `API_BASE_URL` to
+   `https://<project>.vercel.app/api/v1`.
+5. Do not set `VITE_API_BASE_URL` in Vercel. The frontend uses same-origin
+   `/api/v1` requests.
+6. Deploy, then verify `/health/ready`, login, workspace loading, and a
+   non-destructive report download.
+
+Environment-variable changes apply only to new deployments, so redeploy after
+adding or changing them.

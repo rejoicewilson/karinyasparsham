@@ -1,0 +1,15 @@
+.env
+.env.*
+.venv/
+node_modules/
+dist/
+backend/alembic/
+backend/scripts/
+backend/tests/
+tests/
+scripts/
+logo/
+*.log
+*.tsbuildinfo
+__pycache__/
+pytest-cache-files-*/
