@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { FaWhatsapp } from 'react-icons/fa6'
 import {
   AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Banknote, Bell, BookOpen, CalendarDays,
   Check, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Clock3, Download,
   Eye, EyeOff, FileCheck2, HandCoins, HeartHandshake, Home, IndianRupee, Landmark,
-  ListChecks, LockKeyhole, LogOut, Menu, MessageCircle, MessageSquareText, MoreVertical, Pencil, Plus, Receipt,
+  ListChecks, LockKeyhole, LogOut, Menu, MessageSquareText, MoreVertical, Pencil, Plus, Receipt,
   Search, Settings, ShieldCheck, Smartphone, UserRound, Users, WalletCards, WifiOff, X,
   XCircle, type LucideIcon
 } from 'lucide-react'
@@ -624,7 +625,7 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
                   <div className="selected-item-actions">
                     <strong>{formatMoney(member.amount)}</strong>
                     {href
-                      ? <a className="small-action whatsapp-action" href={href} target="_blank" rel="noreferrer" aria-label={`Send WhatsApp message to ${member.name}`}><MessageCircle />WhatsApp</a>
+                      ? <a className="small-action whatsapp-action" href={href} target="_blank" rel="noreferrer" aria-label={`Send WhatsApp message to ${member.name}`}><FaWhatsapp />WhatsApp</a>
                       : <span className="whatsapp-unavailable">No WhatsApp number</span>}
                   </div>
                 </div>

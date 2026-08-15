@@ -292,7 +292,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .selected-items small { color: var(--muted); font-size: 9px; font-weight: 400; }
 .selected-items strong { font-size: 11px; }
 .selected-item-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
-.whatsapp-action { text-decoration: none; white-space: nowrap; }
+.whatsapp-action { color: #087a3f; text-decoration: none; white-space: nowrap; }
+.whatsapp-action svg { width: 17px; height: 17px; fill: currentColor; }
 .whatsapp-unavailable { color: var(--muted); font-size: 9px; font-weight: 600; text-align: right; }
 .review-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
 .empty-review { min-height: 430px; display: grid; align-content: center; justify-items: center; text-align: center; color: var(--muted); }
