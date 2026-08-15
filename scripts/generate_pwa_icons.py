@@ -31,7 +31,7 @@ def main() -> None:
     render_icon(512, 0.9, (0, 0, 0, 0)).save(
         PUBLIC / "pwa-512x512.png", optimize=True
     )
-    render_icon(512, 0.68, (245, 248, 246, 255)).save(
+    render_icon(512, 0.8, (245, 248, 246, 255)).save(
         PUBLIC / "maskable-icon-512x512.png", optimize=True
     )
 
