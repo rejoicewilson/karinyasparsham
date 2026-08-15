@@ -1,0 +1,5 @@
+Alembic migrations for the Karunya Sparsham Supabase PostgreSQL database.
+
+Run from the repository root:
+
+    .\.venv\Scripts\python -m alembic -c backend/alembic.ini upgrade head

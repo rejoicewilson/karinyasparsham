@@ -1,0 +1,45 @@
+from datetime import datetime
+from decimal import Decimal
+from zoneinfo import ZoneInfo
+
+
+IST = ZoneInfo("Asia/Kolkata")
+FIRST_CASE_AMOUNT = Decimal("200.00")
+LATER_CASE_AMOUNT = Decimal("100.00")
+PERMANENT_TARGET = Decimal("15000.00")
+
+
+def sequence_month(now: datetime) -> datetime.date:
+    local = now.astimezone(IST)
+    return local.date().replace(day=1)
+
+
+def default_case_amount(sequence: int) -> Decimal:
+    if sequence < 1:
+        raise ValueError("Monthly sequence must be positive")
+    return FIRST_CASE_AMOUNT if sequence <= 3 else LATER_CASE_AMOUNT
+
+
+def payment_status(required: Decimal, collected: Decimal, verified: Decimal) -> str:
+    if any(value < 0 for value in (required, collected, verified)):
+        raise ValueError("Amounts cannot be negative")
+    if verified > collected or collected > required:
+        raise ValueError("Financial amount invariant violated")
+    if collected == 0:
+        return "Unpaid"
+    if collected < required:
+        return "Partially Paid"
+    if verified < required:
+        return "Awaiting Verification"
+    return "Verified"
+
+
+def require_exact_deposit(calculated: Decimal, declared: Decimal) -> None:
+    if calculated != declared:
+        raise ValueError("DEPOSIT_TOTAL_MISMATCH")
+
+
+def permanent_membership_achieved(verified: Decimal, target: Decimal = PERMANENT_TARGET) -> bool:
+    if verified > target:
+        raise ValueError("Permanent membership overpayment")
+    return verified == target

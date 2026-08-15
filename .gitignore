@@ -1,0 +1,31 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated builds
+node_modules/
+dist/
+
+# Local development output
+*.log
+.tmp/
+*.tsbuildinfo
+.browser-profile*/
+.edge-profile*/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

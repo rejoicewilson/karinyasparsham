@@ -1,0 +1,883 @@
+import { createContext, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import {
+  AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Banknote, Bell, BookOpen, CalendarDays,
+  Check, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Clock3, Download,
+  Eye, EyeOff, FileCheck2, HandCoins, HeartHandshake, Home, IndianRupee, Landmark,
+  ListChecks, LockKeyhole, LogOut, Menu, MessageSquareText, MoreVertical, Pencil, Plus, Receipt,
+  Search, Settings, ShieldCheck, Smartphone, UserRound, Users, WalletCards, WifiOff, X,
+  XCircle, type LucideIcon
+} from 'lucide-react'
+import { formatMoney, getMoneyStatus, type CaseRecord, type CollectionRecord, type DepositRecord, type DueRecord, type MemberRecord, type Role } from './data'
+import { ApiError, authApi, workspaceApi, type ApiProfile, type Workspace } from './api'
+
+type Session = {
+  id: string; role: Role; name: string; loginId: string; talukName?: string; bank?: ApiProfile['bank'];
+  memberCode?: string; agent?: ApiProfile['agent']
+}
+type Toast = { text: string; tone?: 'success' | 'danger' }
+type Notice = { id: string; title: string; body: string; time: string; unread: boolean; kind: string }
+type AppData = {
+  cases: CaseRecord[]; members: MemberRecord[]; memberDues: DueRecord[]; notifications: Notice[];
+  taluks: Record<string, any>[]; agents: Record<string, any>[]; bankAccounts: Record<string, any>[]
+}
+
+const emptyData: AppData = { cases: [], members: [], memberDues: [], notifications: [], taluks: [], agents: [], bankAccounts: [] }
+const DataContext = createContext<AppData>(emptyData)
+const useAppData = () => useContext(DataContext)
+
+const titleCase = (value: string) => value.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
+const dateText = (value: string) => value ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(new Date(value)) : ''
+const dateTimeText = (value: string) => value ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : ''
+const downloadCsv = (filename: string, rows: Array<Array<string | number>>) => {
+  const protect = (value: string | number) => {
+    const raw = String(value)
+    const safe = /^[=+@-]/.test(raw) ? `'${raw}` : raw
+    return `"${safe.replaceAll('"', '""')}"`
+  }
+  const blob = new Blob([rows.map(row => row.map(protect).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url; link.download = filename; link.click()
+  URL.revokeObjectURL(url)
+}
+const toSession = (profile: ApiProfile): Session => ({
+  id: profile.id, role: profile.role.toLowerCase() as Role, name: profile.full_name,
+  loginId: profile.login_id, talukName: profile.taluk_name || undefined, bank: profile.bank,
+  memberCode: profile.member_code || undefined, agent: profile.agent
+})
+
+function mapWorkspace(raw: Workspace) {
+  const cases: CaseRecord[] = raw.cases.map((item, index) => ({
+    id: String(item.id), caseNumber: String(item.case_number), name: String(item.deceased_name),
+    initials: initials(String(item.deceased_name)), taluk: String(item.taluk_name || ''),
+    deathDate: dateText(String(item.death_date)), createdDate: dateTimeText(String(item.created_at)),
+    amount: Number(item.contribution_amount), collected: Number(item.collected_amount),
+    verified: Number(item.verified_amount), status: titleCase(String(item.status)) as CaseRecord['status'],
+    requiredTotal: Number(item.required_amount),
+    talukProgress: (item.taluk_progress || []).map((progress: Record<string, any>) => ({
+      id: String(progress.id), name: String(progress.name), required: Number(progress.required),
+      collected: Number(progress.collected), verified: Number(progress.verified),
+    })),
+    details: String(item.details), accent: ['#8b4a3c', '#446b67', '#5a6274', '#276749'][index % 4]
+  }))
+  const members: MemberRecord[] = raw.members.map(item => ({
+    id: String(item.id), code: String(item.member_code), name: String(item.full_name), phone: String(item.phone || ''),
+    taluk: String(item.taluk_name || ''), membership: titleCase(String(item.membership_type)) as MemberRecord['membership'],
+    talukId: String(item.taluk_id), joinedOn: String(item.joined_on), version: Number(item.version),
+    profileVersion: Number(item.profile_version),
+    pending: Number(item.pending_amount), permanentVerified: Number(item.permanent_verified),
+    status: titleCase(String(item.account_status)) as MemberRecord['status'],
+    permanentAccountId: item.permanent_account_id ? String(item.permanent_account_id) : undefined,
+    permanentTarget: Number(item.permanent_target), permanentCollected: Number(item.permanent_collected),
+    obligations: (item.obligations || []).map((due: Record<string, any>) => ({
+      id: String(due.id), caseId: String(due.case_id), label: String(due.label), available: Number(due.available_amount)
+    }))
+  }))
+  const memberDues: DueRecord[] = raw.dues.map(item => ({
+    caseId: String(item.case_id), obligationId: String(item.obligation_id),
+    name: cases.find(c => c.id === String(item.case_id))?.name || String(item.label), caseNumber: String(item.case_number),
+    required: Number(item.required_amount), collected: Number(item.collected_amount), verified: Number(item.verified_amount)
+  }))
+  const collections: CollectionRecord[] = raw.collections.map(item => ({
+    id: String(item.id), receipt: String(item.receipt_number), memberId: String(item.member_id), member: String(item.member_name),
+    caseId: item.case_id ? String(item.case_id) : undefined, label: String(item.label),
+    type: item.collection_type === 'PERMANENT_MEMBERSHIP' ? 'Permanent membership' : 'Death contribution',
+    amount: Number(item.amount), method: titleCase(String(item.method)) as CollectionRecord['method'],
+    date: dateText(String(item.collected_at)), status: titleCase(String(item.status)) as CollectionRecord['status'],
+    collectorName: String(item.collector_name || 'Collection agent'),
+  }))
+  const deposits: DepositRecord[] = raw.deposits.map(item => ({
+    id: String(item.id), number: String(item.deposit_number), agent: String(item.agent_name), taluk: String(item.taluk_name),
+    bank: `${item.bank_name}${item.bank_last4 ? ` •••• ${item.bank_last4}` : ''}`,
+    calculated: Number(item.calculated_total), declared: Number(item.declared_deposit_amount),
+    submitted: dateTimeText(String(item.submitted_at || item.created_at)), status: titleCase(String(item.status)) as DepositRecord['status'],
+    collectionIds: (item.collection_ids || []).map(String), reference: String(item.bank_reference || ''),
+    rejectionReason: item.rejection_reason ? String(item.rejection_reason) : undefined, version: Number(item.version)
+  }))
+  const notifications: Notice[] = raw.notifications.map(item => ({
+    id: String(item.id), title: String(item.title), body: String(item.body), time: dateTimeText(String(item.created_at)),
+    unread: !item.read, kind: String(item.type).includes('VERIFIED') ? 'verified' : 'case'
+  }))
+  return {
+    data: { cases, members, memberDues, notifications, taluks: raw.taluks, agents: raw.agents || [], bankAccounts: raw.bank_accounts || [] },
+    collections, deposits, session: toSession(raw.profile)
+  }
+}
+
+const pageTitles: Record<string, string> = {
+  dashboard: 'Overview', cases: 'Death cases', dues: 'My dues', payments: 'My payments',
+  permanent: 'Permanent membership', notifications: 'Notifications', account: 'Account',
+  collect: 'Collections', deposits: 'Deposits', members: 'Members', reports: 'Reports',
+  taluks: 'Taluks & banks', settings: 'Settings'
+}
+
+export default function App() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [data, setData] = useState<AppData>(emptyData)
+  const [collections, setCollections] = useState<CollectionRecord[]>([])
+  const [deposits, setDeposits] = useState<DepositRecord[]>([])
+  const [booting, setBooting] = useState(true)
+  const [passwordRequired, setPasswordRequired] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [online, setOnline] = useState(navigator.onLine)
+  const [toast, setToast] = useState<Toast | null>(null)
+  const navigate = useNavigate()
+
+  const loadWorkspace = async () => {
+    setLoadError('')
+    try {
+      const mapped = mapWorkspace(await workspaceApi.load())
+      setSession(mapped.session); setData(mapped.data); setCollections(mapped.collections); setDeposits(mapped.deposits)
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Application data could not be loaded.')
+      throw error
+    }
+  }
+
+  useEffect(() => {
+    authApi.session().then(async ({ profile }) => {
+      setSession(toSession(profile)); setPasswordRequired(Boolean(profile.must_change_password))
+      if (!profile.must_change_password) await loadWorkspace()
+    }).catch(() => undefined).finally(() => setBooting(false))
+  }, [])
+
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    const expired = () => {
+      setSession(null); setPasswordRequired(false); setLoadError('')
+      setData(emptyData); setCollections([]); setDeposits([])
+      navigate('/', { replace: true })
+    }
+    window.addEventListener('online', on); window.addEventListener('offline', off)
+    window.addEventListener('karunya:session-expired', expired)
+    return () => {
+      window.removeEventListener('online', on); window.removeEventListener('offline', off)
+      window.removeEventListener('karunya:session-expired', expired)
+    }
+  }, [navigate])
+
+  const notify = (text: string, tone: Toast['tone'] = 'success') => {
+    setToast({ text, tone }); window.setTimeout(() => setToast(null), 3200)
+  }
+
+  const login = async (loginId: string, password: string) => {
+    const { profile } = await authApi.login(loginId, password)
+    const next = toSession(profile); setSession(next); setPasswordRequired(Boolean(profile.must_change_password))
+    if (!profile.must_change_password) await loadWorkspace()
+    navigate(`/${next.role}/dashboard`)
+  }
+
+  const logout = async () => {
+    await authApi.logout().catch(() => undefined)
+    setSession(null); setData(emptyData); setCollections([]); setDeposits([]); navigate('/')
+  }
+
+  if (booting) return <main className="loading-screen"><img src="/logo.png" alt="" /><p>Loading secure session…</p></main>
+  if (!session) return <Login onLogin={login} />
+  if (passwordRequired) return <PasswordChange session={session} onComplete={async () => { setPasswordRequired(false); await loadWorkspace(); navigate(`/${session.role}/dashboard`) }} onLogout={logout} />
+
+  return (
+    <DataContext.Provider value={data}>
+      {!online && <div className="offline"><WifiOff size={17} /> You are offline. Financial actions are unavailable.</div>}
+      <AppShell session={session} onLogout={logout}>
+        {loadError && <p className="form-error"><AlertCircle />{loadError}</p>}
+        <RoleRouter
+          role={session.role}
+          online={online}
+          collections={collections}
+          setCollections={setCollections}
+          deposits={deposits}
+          setDeposits={setDeposits}
+          notify={notify}
+          reload={loadWorkspace}
+          session={session}
+        />
+      </AppShell>
+      {toast && <div className={`toast ${toast.tone === 'danger' ? 'danger' : ''}`}><CheckCircle2 size={18} />{toast.text}</div>}
+    </DataContext.Provider>
+  )
+}
+
+function Login({ onLogin }: { onLogin: (loginId: string, password: string) => Promise<void> }) {
+  const [loginId, setLoginId] = useState('')
+  const [password, setPassword] = useState('')
+  const [show, setShow] = useState(false)
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!loginId.trim() || !password) { setError('Enter your login ID and password.'); return }
+    setSubmitting(true); setError('')
+    try { await onLogin(loginId.trim(), password) }
+    catch (cause) { setError(cause instanceof ApiError ? cause.message : 'Unable to reach the server.') }
+    finally { setSubmitting(false) }
+  }
+
+  return (
+    <main className="login-page">
+      <section className="login-brand">
+        <img src="/logo.png" alt="Karunya Sparsham" />
+        <div><strong>Karunya Sparsham</strong><span>Helping fund management</span></div>
+      </section>
+      <section className="login-panel">
+        <div className="login-copy"><span className="eyebrow">SECURE ACCESS</span><h1>Welcome back</h1><p>Sign in with the login ID provided by your administrator.</p></div>
+        <form onSubmit={submit}>
+          <label>Login ID<input value={loginId} onChange={e => { setLoginId(e.target.value); setError('') }} autoComplete="username" placeholder="Enter your login ID" /></label>
+          <label>Password<div className="password-field"><input value={password} onChange={e => { setPassword(e.target.value); setError('') }} type={show ? 'text' : 'password'} autoComplete="current-password" placeholder="Enter your password" /><button type="button" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff /> : <Eye />}</button></div></label>
+          {error && <p className="form-error"><AlertCircle size={16} />{error}</p>}
+          <button className="primary full" disabled={submitting} type="submit">{submitting ? 'Signing in…' : 'Sign in'} <ArrowRight size={18} /></button>
+        </form>
+        <p className="security-note"><ShieldCheck size={16} /> Your financial records are protected and auditable.</p>
+      </section>
+    </main>
+  )
+}
+
+function PasswordChange({ session, onComplete, onLogout }: { session: Session; onComplete: () => Promise<void>; onLogout: () => void }) {
+  const [password, setPassword] = useState(''), [confirm, setConfirm] = useState('')
+  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (password.length < 8) { setError('Use at least 8 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
+    setSubmitting(true); setError('')
+    try { await authApi.changePassword(password); await onComplete() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Password could not be changed.') }
+    finally { setSubmitting(false) }
+  }
+  return <main className="login-page"><section className="login-brand"><img src="/logo.png" alt="Karunya Sparsham" /><div><strong>Karunya Sparsham</strong><span>Helping fund management</span></div></section><section className="login-panel"><div className="login-copy"><span className="eyebrow">FIRST SIGN IN</span><h1>Create a new password</h1><p>{session.name}, replace the temporary password before continuing.</p></div><form onSubmit={submit}><label>New password<input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label><label>Confirm password<input type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<button className="primary full" disabled={submitting}>{submitting ? 'Updating…' : 'Update password'}</button><button type="button" className="secondary" onClick={onLogout}>Sign out</button></form></section></main>
+}
+
+type NavItem = { key: string; label: string; icon: LucideIcon }
+const navByRole: Record<Role, NavItem[]> = {
+  member: [
+    { key: 'dashboard', label: 'Home', icon: Home }, { key: 'cases', label: 'Cases', icon: HeartHandshake },
+    { key: 'dues', label: 'Dues', icon: IndianRupee }, { key: 'payments', label: 'Payments', icon: Receipt },
+    { key: 'account', label: 'Account', icon: UserRound }
+  ],
+  agent: [
+    { key: 'dashboard', label: 'Home', icon: Home }, { key: 'collect', label: 'Collect', icon: HandCoins },
+    { key: 'deposits', label: 'Deposits', icon: Landmark }, { key: 'members', label: 'Members', icon: Users },
+    { key: 'account', label: 'Account', icon: UserRound }
+  ],
+  admin: [
+    { key: 'dashboard', label: 'Overview', icon: Home }, { key: 'cases', label: 'Death cases', icon: HeartHandshake },
+    { key: 'deposits', label: 'Deposit review', icon: FileCheck2 }, { key: 'members', label: 'Members', icon: Users },
+    { key: 'taluks', label: 'Taluks & banks', icon: Landmark }, { key: 'reports', label: 'Reports', icon: ListChecks },
+    { key: 'settings', label: 'Settings', icon: Settings }
+  ]
+}
+
+function AppShell({ session, onLogout, children }: { session: Session; onLogout: () => void; children: ReactNode }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [drawer, setDrawer] = useState(false)
+  const segment = location.pathname.split('/')[2] || 'dashboard'
+  const nav = navByRole[session.role]
+  const { notifications } = useAppData()
+  const unread = notifications.filter(item => item.unread).length
+  const go = (key: string) => { navigate(`/${session.role}/${key}`); setDrawer(false); window.scrollTo(0, 0) }
+
+  return (
+    <div className={`app ${session.role}`}>
+      <aside className={`sidebar ${drawer ? 'open' : ''}`}>
+        <div className="side-brand"><img src="/logo.png" alt="" /><div><strong>Karunya<br />Sparsham</strong><span>Helping fund</span></div><button className="icon-btn drawer-close" onClick={() => setDrawer(false)}><X /></button></div>
+        <nav>{nav.map(item => <button className={segment === item.key ? 'active' : ''} key={item.key} onClick={() => go(item.key)}><item.icon /><span>{item.label}</span></button>)}</nav>
+        <div className="side-profile"><div className="avatar">{initials(session.name)}</div><div><strong>{session.name}</strong><span>{session.role}</span></div><button onClick={onLogout} aria-label="Sign out"><LogOut /></button></div>
+      </aside>
+      {drawer && <button className="scrim" onClick={() => setDrawer(false)} aria-label="Close menu" />}
+      <div className="app-main">
+        <header className="topbar">
+          <button className="icon-btn menu-btn" onClick={() => setDrawer(true)}><Menu /></button>
+          <div><span>{session.role === 'member' ? `Hello, ${session.name.split(' ')[0]}` : session.role === 'agent' ? session.talukName || 'Collection agent' : 'Administration'}</span><h1>{pageTitles[segment] || 'Karunya Sparsham'}</h1></div>
+          <button className="notification-btn" onClick={() => navigate(`/${session.role}/notifications`)} aria-label="Notifications"><Bell />{unread > 0 && <i>{unread}</i>}</button>
+        </header>
+        <main className="content">{children}</main>
+      </div>
+      {session.role !== 'admin' && <nav className="bottom-nav">{nav.map(item => <button className={segment === item.key ? 'active' : ''} key={item.key} onClick={() => go(item.key)}><item.icon /><span>{item.label}</span></button>)}</nav>}
+    </div>
+  )
+}
+
+function RoleRouter(props: {
+  role: Role; online: boolean; collections: CollectionRecord[]; setCollections: (value: CollectionRecord[]) => void;
+  deposits: DepositRecord[]; setDeposits: (value: DepositRecord[]) => void; notify: (message: string, tone?: Toast['tone']) => void;
+  reload: () => Promise<void>; session: Session
+}) {
+  const { pathname, search } = useLocation()
+  const navigate = useNavigate()
+  const section = pathname.split('/')[2] || 'dashboard'
+  const detail = pathname.split('/')[3]
+
+  if (section === 'notifications') return <NotificationsPage />
+  if (section === 'account') return <AccountPage session={props.session} notify={props.notify} />
+  if (props.role === 'member') {
+    if (section === 'cases' && detail) return <CaseDetail caseId={detail} member />
+    if (section === 'cases') return <CasesPage role="member" />
+    if (section === 'dues') return <MemberDues />
+    if (section === 'payments') return <MemberPayments collections={props.collections} />
+    if (section === 'permanent') return <PermanentPage />
+    return <MemberDashboard session={props.session} />
+  }
+  if (props.role === 'agent') {
+    if (section === 'collect') return <AgentCollections initialMemberId={new URLSearchParams(search).get('member') || undefined} online={props.online} collections={props.collections} setCollections={props.setCollections} notify={props.notify} reload={props.reload} />
+    if (section === 'deposits') return <AgentDeposits online={props.online} collections={props.collections} setCollections={props.setCollections} deposits={props.deposits} setDeposits={props.setDeposits} notify={props.notify} reload={props.reload} session={props.session} />
+    if (section === 'members' && detail) return <MemberDetail id={detail} onCollect={() => navigate(`/agent/collect?member=${encodeURIComponent(detail)}`)} />
+    if (section === 'members') return <MembersPage role="agent" />
+    if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
+    if (section === 'cases') return <CasesPage role="agent" />
+    return <AgentDashboard collections={props.collections} deposits={props.deposits} />
+  }
+  if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
+  if (section === 'cases') return <AdminCases online={props.online} notify={props.notify} reload={props.reload} />
+  if (section === 'deposits') return <AdminDeposits deposits={props.deposits} setDeposits={props.setDeposits} collections={props.collections} setCollections={props.setCollections} online={props.online} notify={props.notify} reload={props.reload} />
+  if (section === 'members') return <MembersPage role="admin" reload={props.reload} notify={props.notify} />
+  if (section === 'taluks') return <TaluksPage reload={props.reload} notify={props.notify} />
+  if (section === 'reports') return <ReportsPage />
+  if (section === 'settings') return <SettingsPage />
+  return <AdminDashboard deposits={props.deposits} />
+}
+
+function MemberDashboard({ session }: { session: Session }) {
+  const navigate = useNavigate()
+  const { cases, memberDues, members } = useAppData(); const member = members[0]
+  const toGive = memberDues.reduce((sum, due) => sum + due.required - due.collected, 0)
+  const permanentCollected = member?.permanentCollected || 0
+  const permanentVerified = member?.permanentVerified || 0
+  const awaiting = memberDues.reduce((sum, due) => sum + due.collected - due.verified, 0) + Math.max(permanentCollected - permanentVerified, 0)
+  const verified = memberDues.reduce((sum, due) => sum + due.verified, 0) + permanentVerified
+  const target = member?.permanentTarget || 0
+  return <div className="page-stack">
+    <section className="member-summary band-green">
+      <div><span>Amount to give agent</span><strong>{formatMoney(toGive)}</strong><small>Across {memberDues.filter(d => d.required > d.collected).length} open cases</small></div>
+      <button onClick={() => navigate('/member/dues')}>View dues <ChevronRight size={18} /></button>
+    </section>
+    <section className="metric-grid compact">
+      <Metric icon={Clock3} label="Awaiting verification" value={formatMoney(awaiting)} tone="amber" />
+      <Metric icon={BadgeCheck} label="Verified total" value={formatMoney(verified)} tone="green" />
+    </section>
+    <SectionHeading title="Permanent membership" action="View account" onAction={() => navigate('/member/permanent')} />
+    <section className="progress-section">
+      <div className="progress-copy"><div><span>Collected</span><strong>{formatMoney(permanentCollected)}</strong></div><div><span>Verified</span><strong>{formatMoney(permanentVerified)}</strong></div><div><span>Target</span><strong>{formatMoney(target)}</strong></div></div>
+      <Progress value={target ? permanentVerified / target * 100 : 0} />
+      <p><BadgeCheck size={17} /> {formatMoney(Math.max(target - permanentVerified, 0))} remaining to become permanent</p>
+    </section>
+    <SectionHeading title="Recent helping requests" action="See all" onAction={() => navigate('/member/cases')} />
+    <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/member/cases/${item.id}`)} memberDue={memberDues.find(d => d.caseId === item.id)} />)}</div>
+    {session.agent && <section className="agent-contact"><div className="avatar dark">{initials(session.agent.full_name)}</div><div><span>Your collection agent</span><strong>{session.agent.full_name}</strong><small>{session.talukName}{session.agent.phone ? ` · ${session.agent.phone}` : ''}</small></div><button disabled={!session.agent.phone} title={session.agent.phone ? `Call ${session.agent.full_name}` : 'Agent phone number is not configured'} aria-label="Contact agent" onClick={() => { if (session.agent?.phone) window.location.href = `tel:${session.agent.phone}` }}><MessageSquareText /></button></section>}
+  </div>
+}
+
+function AgentDashboard({ collections, deposits }: { collections: CollectionRecord[]; deposits: DepositRecord[] }) {
+  const navigate = useNavigate()
+  const { cases, members } = useAppData()
+  const unbatched = collections.filter(c => c.status === 'Recorded').reduce((sum, c) => sum + c.amount, 0)
+  return <div className="page-stack">
+    <section className="metric-grid agent-metrics">
+      <Metric icon={Users} label="Assigned members" value={String(members.length)} />
+      <Metric icon={IndianRupee} label="Total pending" value={formatMoney(members.reduce((sum, item) => sum + item.pending, 0))} tone="red" />
+      <Metric icon={WalletCards} label="Not deposited" value={formatMoney(unbatched)} tone="amber" />
+      <Metric icon={Clock3} label="Awaiting review" value={String(deposits.filter(d => d.status === 'Submitted').length)} tone="blue" />
+    </section>
+    <button className="primary action-wide" onClick={() => navigate('/agent/collect')}><HandCoins /> Record a collection <ArrowRight /></button>
+    <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
+    <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agent key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
+    <SectionHeading title="Deposit status" action="All deposits" onAction={() => navigate('/agent/deposits')} />
+    <div className="list-surface">{deposits.slice(0, 2).map(d => <DepositRow key={d.id} deposit={d} />)}</div>
+  </div>
+}
+
+function AdminDashboard({ deposits }: { deposits: DepositRecord[] }) {
+  const navigate = useNavigate()
+  const { cases, members, taluks } = useAppData()
+  const talukTotals = cases.flatMap(item => item.talukProgress).reduce((totals, item) => {
+    const current = totals.get(item.id) || { required: 0, collected: 0 }
+    current.required += item.required; current.collected += item.collected; totals.set(item.id, current)
+    return totals
+  }, new Map<string, { required: number; collected: number }>())
+  return <div className="page-stack admin-page">
+    <div className="admin-heading"><div><span className="eyebrow">LIVE DATABASE</span><h2>Administration overview</h2><p>Current organization and collection status.</p></div><button className="primary" onClick={() => navigate('/admin/cases?create=1')}><Plus /> New death case</button></div>
+    <section className="metric-grid admin-metrics">
+      <Metric icon={Users} label="Active members" value={String(members.filter(m => m.status === 'Active').length)} detail={`${members.filter(m => m.membership === 'Permanent').length} permanent`} />
+      <Metric icon={HeartHandshake} label="Open cases" value={String(cases.filter(c => c.status === 'Open').length)} detail={`${cases.length} total cases`} tone="red" />
+      <Metric icon={FileCheck2} label="Pending reviews" value={String(deposits.filter(d => d.status === 'Submitted').length)} detail="Awaiting admin action" tone="amber" />
+      <Metric icon={IndianRupee} label="Outstanding dues" value={formatMoney(members.reduce((sum, item) => sum + item.pending, 0))} detail={`${taluks.length} taluks`} tone="blue" />
+    </section>
+    <div className="admin-columns">
+      <section><SectionHeading title="Deposit review queue" action="Review all" onAction={() => navigate('/admin/deposits')} /><div className="list-surface">{deposits.filter(d => d.status === 'Submitted').map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => navigate('/admin/deposits')} />)}</div></section>
+      <section><SectionHeading title="Taluk collection progress" action="View report" onAction={() => navigate('/admin/reports')} />{taluks.length ? <div className="taluk-progress">{taluks.map(item => { const total = talukTotals.get(String(item.id)); const percent = total?.required ? total.collected / total.required * 100 : 0; return <div key={String(item.id)}><div><strong>{String(item.name)}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No taluks have been configured.</p>}</section>
+    </div>
+    <SectionHeading title="Recent death cases" action="View register" onAction={() => navigate('/admin/cases')} />
+    <div className="case-list admin-cases">{cases.slice(0, 3).map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/admin/cases/${item.id}`)} />)}</div>
+  </div>
+}
+
+function CasesPage({ role }: { role: Role }) {
+  const navigate = useNavigate(); const { cases, memberDues } = useAppData()
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'All' | 'Open' | 'Closed'>('All')
+  const visible = cases.filter(item => {
+    const matchesStatus = filter === 'All' || item.status === filter
+    const term = query.trim().toLowerCase()
+    return matchesStatus && (!term || item.caseNumber.toLowerCase().includes(term) || item.name.toLowerCase().includes(term) || item.taluk.toLowerCase().includes(term))
+  })
+  return <div className="page-stack"><SearchBox value={query} onChange={setQuery} placeholder="Search cases or member name" /><div className="filter-row">{(['All', 'Open', 'Closed'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status === 'All' ? 'All cases' : status}</button>)}</div>{visible.length ? <div className="case-list">{visible.map(item => <CaseCard key={item.id} item={item} memberDue={role === 'member' ? memberDues.find(d => d.caseId === item.id) : undefined} agent={role === 'agent'} onClick={() => navigate(`/${role}/cases/${item.id}`)} />)}</div> : <div className="empty-review"><HeartHandshake /><h3>No cases found</h3><p>Try another search or status filter.</p></div>}</div>
+}
+
+function AdminCases({ online, notify, reload }: { online: boolean; notify: (message: string) => void; reload: () => Promise<void> }) {
+  const { search } = useLocation()
+  const [modal, setModal] = useState(() => new URLSearchParams(search).get('create') === '1')
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'All' | CaseRecord['status']>('All')
+  const { cases } = useAppData()
+  const navigate = useNavigate()
+  const visible = cases.filter(item => {
+    const matchesStatus = filter === 'All' || item.status === filter
+    const term = query.trim().toLowerCase()
+    return matchesStatus && (!term || item.caseNumber.toLowerCase().includes(term) || item.name.toLowerCase().includes(term) || item.taluk.toLowerCase().includes(term))
+  })
+  return <div className="page-stack"><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search case number or member" /><button className="primary" disabled={!online} onClick={() => setModal(true)}><Plus /> Create case</button></div><div className="filter-row">{(['All', 'Open', 'Closed', 'Cancelled'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status === 'All' ? 'All cases' : status}</button>)}</div>{visible.length ? <div className="case-list admin-cases">{visible.map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/admin/cases/${item.id}`)} />)}</div> : <div className="empty-review"><HeartHandshake /><h3>No cases found</h3><p>Try another search or status filter.</p></div>}{modal && <CreateCaseModal onClose={() => setModal(false)} onPublish={async () => { setModal(false); await reload(); notify('Death case published and obligations created.') }} />}</div>
+}
+
+function CaseDetail({ caseId, member = false }: { caseId: string; member?: boolean }) {
+  const navigate = useNavigate(); const { cases, memberDues } = useAppData(); const item = cases.find(c => c.id === caseId)
+  if (!item) return <div className="empty-review"><HeartHandshake /><h3>Case not found</h3></div>
+  const due = memberDues.find(d => d.caseId === item.id)
+  return <div className="page-stack detail-page"><button className="back-link" onClick={() => navigate(-1)}><ArrowLeft /> Back to cases</button><section className="case-hero"><Avatar name={item.name} color={item.accent} large /><div><span className="case-number">{item.caseNumber}</span><h2>{item.name}</h2><p>{item.details}</p><div className="meta-row"><span><CalendarDays /> {item.deathDate}</span><span><MapPinIcon /> {item.taluk}</span><Status value={item.status} /></div></div></section>{member && due ? <><SectionHeading title="Your contribution" /><section className="contribution-detail"><div><span>Required</span><strong>{formatMoney(due.required)}</strong></div><div><span>Collected</span><strong>{formatMoney(due.collected)}</strong></div><div><span>Verified</span><strong>{formatMoney(due.verified)}</strong></div><div><span>Still to give</span><strong>{formatMoney(due.required - due.collected)}</strong></div></section><LedgerBreakdown required={due.required} collected={due.collected} verified={due.verified} /></> : <><section className="metric-grid compact"><Metric icon={IndianRupee} label="Required total" value={formatMoney(item.requiredTotal)} /><Metric icon={HandCoins} label="Collected" value={formatMoney(item.collected)} tone="amber" /><Metric icon={BadgeCheck} label="Verified" value={formatMoney(item.verified)} tone="green" /><Metric icon={Clock3} label="Awaiting" value={formatMoney(item.collected - item.verified)} tone="blue" /></section><SectionHeading title="Taluk progress" />{item.talukProgress.length ? <div className="taluk-progress">{item.talukProgress.map(progress => { const percent = progress.required ? progress.collected / progress.required * 100 : 0; return <div key={progress.id}><div><strong>{progress.name}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No obligations were created for this case.</p>}</>}</div>
+}
+
+function MemberDues() {
+  const { memberDues } = useAppData()
+  const [filter, setFilter] = useState<'Outstanding' | 'All'>('Outstanding')
+  const open = memberDues.filter(d => d.required - d.collected > 0)
+  const visible = filter === 'Outstanding' ? open : memberDues
+  return <div className="page-stack"><section className="due-total"><div><span>Total amount to give agent</span><strong>{formatMoney(open.reduce((s, d) => s + d.required - d.collected, 0))}</strong></div><IndianRupee /></section><div className="filter-row"><button className={`chip ${filter === 'Outstanding' ? 'active' : ''}`} onClick={() => setFilter('Outstanding')}>Outstanding ({open.length})</button><button className={`chip ${filter === 'All' ? 'active' : ''}`} onClick={() => setFilter('All')}>All obligations ({memberDues.length})</button></div>{visible.length ? <div className="dues-list">{visible.map(d => <article key={d.caseId}><div className="item-top"><div><span>{d.caseNumber}</span><h3>{d.name}</h3></div><Status value={getMoneyStatus(d.required, d.collected, d.verified)} /></div><LedgerBreakdown required={d.required} collected={d.collected} verified={d.verified} /></article>)}</div> : <div className="empty-review"><BadgeCheck /><h3>No outstanding dues</h3><p>Your collected obligations are available under all obligations.</p></div>}</div>
+}
+
+function MemberPayments({ collections }: { collections: CollectionRecord[] }) {
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'All' | 'Awaiting' | 'Verified'>('All')
+  const mine = collections.filter(item => {
+    const awaiting = item.status !== 'Verified'
+    const matchesStatus = filter === 'All' || (filter === 'Awaiting' ? awaiting : !awaiting)
+    const term = query.trim().toLowerCase()
+    return matchesStatus && (!term || item.label.toLowerCase().includes(term) || item.receipt.toLowerCase().includes(term) || String(item.collectorName || '').toLowerCase().includes(term))
+  })
+  return <div className="page-stack"><SearchBox value={query} onChange={setQuery} placeholder="Search payments" /><div className="filter-row">{(['All', 'Awaiting', 'Verified'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{mine.length ? <div className="payment-list">{mine.map(c => <article key={c.id}><div className={`payment-icon ${c.status.toLowerCase()}`}>{c.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{c.label}</strong><span>{c.receipt} · {c.date}</span><small>{c.method} · Collected by {c.collectorName}</small></div><div><strong>{formatMoney(c.amount)}</strong><Status value={c.status === 'Batched' || c.status === 'Recorded' ? 'Awaiting Verification' : 'Verified'} /></div></article>)}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Try another search or status filter.</p></div>}</div>
+}
+
+function PermanentPage() {
+  const { members } = useAppData(); const member = members[0]
+  const verified = member?.permanentVerified || 0, collected = member?.permanentCollected || 0
+  const target = member?.permanentTarget || 0, remaining = Math.max(target - verified, 0)
+  return <div className="page-stack"><section className="permanent-hero"><div className="permanent-seal"><ShieldCheck /></div><span>Verified progress</span><strong>{formatMoney(verified)}</strong><p>of {formatMoney(target)} target</p><Progress value={target ? verified / target * 100 : 0} /><small>{formatMoney(remaining)} remaining</small></section><section className="metric-grid compact"><Metric icon={HandCoins} label="Collected" value={formatMoney(collected)} tone="blue" /><Metric icon={Clock3} label="Awaiting verification" value={formatMoney(Math.max(collected - verified, 0))} tone="amber" /><Metric icon={ShieldCheck} label="Membership" value={member?.membership || 'Regular'} /></section><p className="subtle">{collected ? `${formatMoney(collected)} has been recorded toward permanent membership.` : 'No permanent-membership instalments have been recorded.'}</p></div>
+}
+
+function AgentCollections({ initialMemberId, online, collections, setCollections: _setCollections, notify, reload }: { initialMemberId?: string; online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void> }) {
+  const [modal, setModal] = useState(Boolean(initialMemberId))
+  const [selectedMemberId, setSelectedMemberId] = useState<string | undefined>(initialMemberId)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'Pending' | 'Partial' | 'Complete'>('Pending')
+  const { members } = useAppData()
+  const visible = members.filter(member => {
+    const hasPreviousDeathCollection = collections.some(item => item.memberId === member.id && item.type === 'Death contribution')
+    const matchesStatus = filter === 'Complete' ? member.pending <= 0 : filter === 'Partial' ? member.pending > 0 && hasPreviousDeathCollection : member.pending > 0 && !hasPreviousDeathCollection
+    return matchesStatus && (member.name.toLowerCase().includes(query.toLowerCase()) || member.code.toLowerCase().includes(query.toLowerCase()))
+  })
+  const record = async (memberId: string, type: string, amount: number, method: CollectionRecord['method']) => {
+    const member = members.find(item => item.id === memberId); if (!member) return
+    const isPermanent = type === 'permanent'; const obligation = member.obligations?.find(item => item.caseId === type)
+    await workspaceApi.recordCollection({
+      client_request_id: crypto.randomUUID(), member_id: memberId,
+      collection_type: isPermanent ? 'PERMANENT_MEMBERSHIP' : 'DEATH_CONTRIBUTION',
+      case_obligation_id: isPermanent ? null : obligation?.id,
+      permanent_account_id: isPermanent ? member.permanentAccountId : null,
+      amount, method: method.toUpperCase().replaceAll(' ', '_'), collected_at: new Date().toISOString()
+    })
+    await reload(); setModal(false); notify(`${formatMoney(amount)} collection recorded for ${member.name}.`)
+  }
+  return <div className="page-stack"><section className="collection-banner"><div><span>Collected, not deposited</span><strong>{formatMoney(collections.filter(c => c.status === 'Recorded').reduce((s, c) => s + c.amount, 0))}</strong></div><button className="secondary" onClick={() => location.assign('/agent/deposits')}>Prepare deposit <ArrowRight /></button></section><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search member name or code" /><button className="primary" disabled={!online} onClick={() => { setSelectedMemberId(undefined); setModal(true) }}><Plus /> Record payment</button></div><div className="filter-row">{(['Pending', 'Partial', 'Complete'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={() => { setSelectedMemberId(m.id); setModal(true) }} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search or collection-status filter.</p></div>}{modal && <CollectionModal initialMemberId={selectedMemberId} onClose={() => { setModal(false); setSelectedMemberId(undefined) }} onRecord={record} />}</div>
+}
+
+function AgentDeposits({ online, collections, setCollections: _setCollections, deposits, setDeposits: _setDeposits, notify, reload, session }: { online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void>; session: Session }) {
+  const [modal, setModal] = useState(false)
+  const [filter, setFilter] = useState<'All' | DepositRecord['status']>('All')
+  const own = deposits.filter(item => item.agent === session.name && (filter === 'All' || item.status === filter))
+  const bankLabel = session.bank ? `${session.bank.bank_name} •••• ${session.bank.last4}` : 'No bank account configured'
+  const create = async (ids: string[], amount: number, reference: string) => {
+    const batch = await workspaceApi.createDeposit({ collection_ids: ids, declared_deposit_amount: amount, deposited_at: new Date().toISOString(), bank_reference: reference })
+    await workspaceApi.submitDeposit(String(batch.id), Number(batch.version || 1))
+    await reload(); setModal(false); notify('Deposit submitted for admin verification.')
+  }
+  const submitDraft = async (deposit: DepositRecord) => {
+    try { await workspaceApi.submitDeposit(deposit.id, deposit.version || 1); await reload(); notify('Draft deposit submitted for admin verification.') }
+    catch (cause) { notify(cause instanceof Error ? cause.message : 'Draft deposit could not be submitted.') }
+  }
+  return <div className="page-stack"><div className="toolbar"><div><h2 className="mobile-section-title">Deposit batches</h2><p className="subtle">{bankLabel}</p></div><button className="primary" disabled={!online || !session.bank || !collections.some(c => c.status === 'Recorded')} onClick={() => setModal(true)}><Plus /> New deposit</button></div><div className="filter-row">{(['All', 'Draft', 'Submitted', 'Approved', 'Rejected'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{own.length ? <div className="list-surface deposits-full">{own.map(d => <DepositRow key={d.id} deposit={d} action={d.status === 'Draft' && online ? () => submitDraft(d) : undefined} actionLabel="Submit" />)}</div> : <div className="empty-review"><Landmark /><h3>No deposits found</h3><p>Create a batch from recorded collections or choose another status.</p></div>}{modal && <DepositModal collections={collections.filter(c => c.status === 'Recorded')} onClose={() => setModal(false)} onSubmit={create} />}</div>
+}
+
+function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCollections: _setCollections, online, notify, reload }: { deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; online: boolean; notify: (message: string, tone?: Toast['tone']) => void; reload: () => Promise<void> }) {
+  const [selected, setSelected] = useState<DepositRecord | null>(null)
+  const [filter, setFilter] = useState<'Submitted' | 'Approved' | 'Rejected'>('Submitted')
+  const [reviewing, setReviewing] = useState(false)
+  const filteredDeposits = deposits.filter(deposit => deposit.status === filter)
+  const filterCopy = filter === 'Submitted'
+    ? { title: 'No deposits awaiting review', detail: 'An agent must submit a deposit batch before it can be approved or rejected.' }
+    : { title: `No ${filter.toLowerCase()} deposits`, detail: `Deposits marked ${filter.toLowerCase()} will appear here.` }
+  const selectFilter = (status: 'Submitted' | 'Approved' | 'Rejected') => {
+    setFilter(status)
+    setSelected(null)
+  }
+  const review = async (decision: 'Approved' | 'Rejected') => {
+    if (!selected || selected.status !== 'Submitted' || reviewing) return
+    const reason = decision === 'Rejected' ? window.prompt('Enter the rejection reason:')?.trim() : undefined
+    if (decision === 'Rejected' && (!reason || reason.length < 3)) return
+    setReviewing(true)
+    try {
+      await workspaceApi.reviewDeposit(selected.id, selected.version || 1, decision === 'Approved', reason)
+      await reload()
+      setSelected(null)
+      notify(decision === 'Approved' ? 'Deposit approved. Included members were notified.' : 'Deposit rejected and collections released.', decision === 'Rejected' ? 'danger' : 'success')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : `Unable to ${decision.toLowerCase()} the deposit.`, 'danger')
+    } finally {
+      setReviewing(false)
+    }
+  }
+  return <div className="page-stack">
+    <div className="filter-row">
+      <button className={`chip ${filter === 'Submitted' ? 'active' : ''}`} onClick={() => selectFilter('Submitted')}>Pending ({deposits.filter(d => d.status === 'Submitted').length})</button>
+      <button className={`chip ${filter === 'Approved' ? 'active' : ''}`} onClick={() => selectFilter('Approved')}>Approved ({deposits.filter(d => d.status === 'Approved').length})</button>
+      <button className={`chip ${filter === 'Rejected' ? 'active' : ''}`} onClick={() => selectFilter('Rejected')}>Rejected ({deposits.filter(d => d.status === 'Rejected').length})</button>
+    </div>
+    <div className="review-layout">
+      <div className="list-surface">
+        {filteredDeposits.length
+          ? filteredDeposits.map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => setSelected(d)} selected={selected?.id === d.id} />)
+          : <div className="empty-review"><FileCheck2 /><h3>{filterCopy.title}</h3><p>{filterCopy.detail}</p></div>}
+      </div>
+      <section className="review-detail">
+        {selected ? <>
+          <div className="review-head"><div><span className="case-number">{selected.number}</span><h2>{selected.agent}</h2><p>{selected.taluk} · {selected.submitted}</p></div><Status value={selected.status} /></div>
+          <div className="amount-match"><div><span>Calculated total</span><strong>{formatMoney(selected.calculated)}</strong></div><div><span>Declared deposit</span><strong>{formatMoney(selected.declared)}</strong></div><p className={selected.calculated === selected.declared ? 'match' : 'mismatch'}>{selected.calculated === selected.declared ? <CheckCircle2 /> : <AlertCircle />}{selected.calculated === selected.declared ? 'Amounts match exactly' : 'Approval blocked: total mismatch'}</p></div>
+          <dl className="review-data"><div><dt>Destination bank</dt><dd>{selected.bank}</dd></div><div><dt>Bank reference</dt><dd>{selected.reference}</dd></div><div><dt>Receipt</dt><dd>Not provided</dd></div></dl>
+          <SectionHeading title="Collection entries" />
+          <div className="selected-items">{selected.collectionIds.length ? collections.filter(c => selected.collectionIds.includes(c.id)).map(c => <div key={c.id}><span>{c.member}<small>{c.label}</small></span><strong>{formatMoney(c.amount)}</strong></div>) : <div><span>Multiple verified entries<small>Item breakdown retained in batch</small></span><strong>{formatMoney(selected.calculated)}</strong></div>}</div>
+          {selected.status === 'Submitted' && <div className="review-actions"><button className="danger-btn" disabled={!online || reviewing} onClick={() => review('Rejected')}><XCircle /> {reviewing ? 'Working...' : 'Reject'}</button><button className="primary" disabled={!online || reviewing || selected.calculated !== selected.declared} onClick={() => review('Approved')}><CheckCircle2 /> {reviewing ? 'Working...' : 'Approve deposit'}</button></div>}
+        </> : <div className="empty-review"><FileCheck2 /><h3>{filteredDeposits.length ? `Select a ${filter.toLowerCase()} deposit` : filterCopy.title}</h3><p>{filteredDeposits.length ? (filter === 'Submitted' ? 'Review the calculated total, bank details, and collection entries before deciding.' : 'Select a deposit from the list to view its details.') : filterCopy.detail}</p></div>}
+      </section>
+    </div>
+  </div>
+}
+
+function MembersPage({ role, reload, notify }: { role: 'agent' | 'admin'; reload?: () => Promise<void>; notify?: (message: string, tone?: Toast['tone']) => void }) {
+  const navigate = useNavigate(); const [query, setQuery] = useState(''), [adding, setAdding] = useState(false)
+  const [filter, setFilter] = useState<'Active' | 'Permanent' | 'Inactive'>('Active')
+  const [editing, setEditing] = useState<MemberRecord | null>(null)
+  const { members } = useAppData()
+  const visible = members.filter(member => {
+    const matchesFilter = filter === 'Permanent' ? member.membership === 'Permanent' : filter === 'Inactive' ? member.status !== 'Active' : member.status === 'Active'
+    const term = query.toLowerCase()
+    return matchesFilter && (member.name.toLowerCase().includes(term) || member.code.toLowerCase().includes(term) || member.phone.toLowerCase().includes(term))
+  })
+  const counts = { Active: members.filter(item => item.status === 'Active').length, Permanent: members.filter(item => item.membership === 'Permanent').length, Inactive: members.filter(item => item.status !== 'Active').length }
+  return <div className="page-stack"><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search name, member code or phone" />{role === 'admin' && <button className="primary" onClick={() => setAdding(true)}><Plus /> Add member</button>}</div><div className="filter-row">{(['Active', 'Permanent', 'Inactive'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status} ({counts[status]})</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={role === 'admin' ? () => setEditing(m) : undefined} actionLabel="Edit" onClick={role === 'agent' ? () => navigate(`/agent/members/${m.id}`) : undefined} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search or member filter.</p></div>}{adding && reload && notify && <InitialSetupModal kind="member" onClose={() => setAdding(false)} reload={reload} notify={notify} />}{editing && reload && notify && <EditMemberModal member={editing} onClose={() => setEditing(null)} reload={reload} notify={notify} />}</div>
+}
+
+function MemberDetail({ id, onCollect }: { id: string; onCollect: () => void }) {
+  const { members } = useAppData()
+  const m = members.find(x => x.id === id)
+  if (!m) return <div className="empty-review"><Users /><h3>Member not found</h3></div>
+  const target = m.permanentTarget || 0
+  const collected = m.permanentCollected || 0
+  const awaiting = Math.max(collected - m.permanentVerified, 0)
+  const stillToCollect = Math.max(target - collected, 0)
+  return <div className="page-stack detail-page"><button className="back-link" onClick={() => history.back()}><ArrowLeft /> Back to members</button><section className="profile-hero"><Avatar name={m.name} color="#276749" large /><div><span>{m.code}</span><h2>{m.name}</h2><p>{m.phone} · {m.taluk} Taluk</p><Status value={m.membership} /></div><button className="primary" onClick={onCollect}><HandCoins /> Record payment</button></section><section className="metric-grid compact"><Metric icon={IndianRupee} label="Death-case dues" value={formatMoney(m.pending)} tone="red" /><Metric icon={HandCoins} label="Permanent collected" value={formatMoney(collected)} tone="amber" /><Metric icon={Clock3} label="Awaiting verification" value={formatMoney(awaiting)} tone="blue" /><Metric icon={ShieldCheck} label="Permanent verified" value={formatMoney(m.permanentVerified)} tone="green" /></section><SectionHeading title="Permanent membership" /><section className="progress-section"><div className="progress-copy"><div><span>Collected</span><strong>{formatMoney(collected)}</strong></div><div><span>Verified</span><strong>{formatMoney(m.permanentVerified)}</strong></div></div><Progress value={target ? (m.permanentVerified / target) * 100 : 0} /><p><Clock3 /> {formatMoney(awaiting)} awaiting verification · {formatMoney(stillToCollect)} still to collect</p></section></div>
+}
+
+function NotificationsPage() {
+  const { notifications } = useAppData(); const unread = notifications.filter(item => item.unread).length
+  const [filter, setFilter] = useState<'All' | 'Unread'>('All')
+  const visible = filter === 'Unread' ? notifications.filter(item => item.unread) : notifications
+  return <div className="page-stack"><div className="filter-row"><button className={`chip ${filter === 'All' ? 'active' : ''}`} onClick={() => setFilter('All')}>All ({notifications.length})</button><button className={`chip ${filter === 'Unread' ? 'active' : ''}`} onClick={() => setFilter('Unread')}>Unread ({unread})</button></div>{visible.length ? <div className="notification-list">{visible.map(item => <article className={item.unread ? 'unread' : ''} key={item.id}><div className={`notice-icon ${item.kind}`}>{item.kind === 'verified' ? <BadgeCheck /> : <HeartHandshake />}</div><div><div><strong>{item.title}</strong>{item.unread && <i />}</div><p>{item.body}</p><span>{item.time}</span></div></article>)}</div> : <div className="empty-review"><Bell /><h3>{filter === 'Unread' ? 'No unread notifications' : 'No notifications'}</h3><p>New case and payment updates will appear here.</p></div>}</div>
+}
+
+function AccountPage({ session, notify }: { session: Session; notify: (message: string, tone?: Toast['tone']) => void }) {
+  const role = session.role, p = session
+  const [changingPassword, setChangingPassword] = useState(false)
+  const subtitle = role === 'member' ? [p.memberCode, p.talukName && `${p.talukName} Taluk`].filter(Boolean).join(' · ') : role === 'agent' ? ['Collection agent', p.talukName && `${p.talukName} Taluk`].filter(Boolean).join(' · ') : 'System administrator'
+  return <div className="page-stack"><section className="account-head"><div className="avatar xl">{initials(p.name)}</div><h2>{p.name}</h2><p>{subtitle}</p><Status value="Active" /></section><section className="settings-list"><button onClick={() => setChangingPassword(true)}><LockKeyhole /><span><strong>Change password</strong><small>Update your account password</small></span><ChevronRight /></button></section><div className="profile-data"><span>Full name</span><strong>{p.name}</strong><span>Login ID</span><strong>{p.loginId}</strong><span>Role</span><strong>{role[0].toUpperCase() + role.slice(1)}</strong>{p.talukName && <><span>Taluk</span><strong>{p.talukName}</strong></>}</div>{changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} onChanged={() => { setChangingPassword(false); notify('Password changed successfully.') }} />}</div>
+}
+
+function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const [password, setPassword] = useState(''), [confirm, setConfirm] = useState('')
+  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setError('')
+    if (password.length < 8) { setError('Use at least 8 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
+    setSubmitting(true)
+    try { await authApi.changePassword(password); onChanged() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Password could not be changed.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Change password" onClose={onClose}><form className="modal-form" onSubmit={submit}><label>New password<input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label>Confirm password<input type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={event => setConfirm(event.target.value)} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? 'Updating…' : 'Update password'}</button></div></form></Modal>
+}
+
+type SetupKind = 'taluk' | 'agent' | 'bank' | 'member'
+
+function TaluksPage({ reload, notify }: { reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
+  const { taluks, agents, bankAccounts, members } = useAppData()
+  const [query, setQuery] = useState('')
+  const [setup, setSetup] = useState<SetupKind | null>(null)
+  const [editingTaluk, setEditingTaluk] = useState<Record<string, any> | null>(null)
+  const [replacingBank, setReplacingBank] = useState<Record<string, any> | null>(null)
+  const [editingAgent, setEditingAgent] = useState<Record<string, any> | null>(null)
+  const term = query.trim().toLowerCase()
+  const visibleTaluks = taluks.filter(item => !term || String(item.name).toLowerCase().includes(term) || String(item.code).toLowerCase().includes(term) || String(item.agent_name || '').toLowerCase().includes(term))
+  const visibleAgents = agents.filter(item => !term || String(item.full_name).toLowerCase().includes(term) || String(item.login_id).toLowerCase().includes(term) || String(item.taluk_name || '').toLowerCase().includes(term))
+  const bankForTaluk = (taluk: Record<string, any>) => bankAccounts.find(item => String(item.taluk_id) === String(taluk.id))
+  const replaceBank = (taluk: Record<string, any>) => {
+    const bank = bankForTaluk(taluk)
+    if (!taluk.bank_account_id && !bank) return
+    setReplacingBank({
+      ...taluk,
+      bank_account_id: taluk.bank_account_id || bank?.id,
+      agent_profile_id: taluk.agent_profile_id || bank?.agent_profile_id,
+      bank_name: taluk.bank_name || bank?.bank_name,
+      bank_last4: taluk.bank_last4 || bank?.last4,
+      bank_branch_name: taluk.bank_branch_name || bank?.branch_name,
+      bank_account_holder_name: taluk.bank_account_holder_name || bank?.account_holder_name,
+      bank_ifsc_code: taluk.bank_ifsc_code || bank?.ifsc_code,
+    })
+  }
+  const steps: { kind: SetupKind; title: string; detail: string; complete: boolean; enabled: boolean }[] = [
+    { kind: 'taluk', title: 'Taluks', detail: `${taluks.length} configured`, complete: taluks.length > 0, enabled: true },
+    { kind: 'agent', title: 'Agents', detail: `${agents.length} assigned`, complete: agents.length > 0, enabled: taluks.length > 0 },
+    { kind: 'bank', title: 'Bank accounts', detail: `${bankAccounts.length} configured`, complete: bankAccounts.length > 0, enabled: agents.length > 0 },
+    { kind: 'member', title: 'Members', detail: `${members.length} registered`, complete: members.length > 0, enabled: bankAccounts.length > 0 },
+  ]
+  return <div className="page-stack">
+    <section className="setup-flow">
+      <div className="setup-heading"><div><span>Initial setup</span><h2>Organization setup</h2></div><small>Complete in order</small></div>
+      <div className="setup-steps">{steps.map((step, index) => <article className={step.complete ? 'complete' : ''} key={step.kind}><div className="setup-number">{step.complete ? <Check /> : index + 1}</div><div><strong>{step.title}</strong><span>{step.detail}</span></div><button className="secondary" disabled={!step.enabled} onClick={() => setSetup(step.kind)}><Plus /> Add</button></article>)}</div>
+    </section>
+    <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search taluk or agent" /><button className="primary" onClick={() => setSetup('taluk')}><Plus /> Add taluk</button></div>
+    {visibleTaluks.length ? <div className="organization-grid">{visibleTaluks.map(item => <article key={String(item.id)}><div className="org-head"><div className="org-code">{String(item.code)}</div><div className="org-actions"><button className="icon-btn" title="Edit taluk" onClick={() => setEditingTaluk(item)}><Pencil /></button><button className="icon-btn" title="Replace bank account" disabled={!item.bank_account_id && !bankForTaluk(item)} onClick={() => replaceBank(item)}><Landmark /></button></div></div><h3>{String(item.name)} Taluk</h3><dl><div><dt>Active agent</dt><dd>{String(item.agent_name || 'Not assigned')}</dd></div><div><dt>Bank account</dt><dd>{item.bank_name ? `${item.bank_name} •••• ${item.bank_last4 || ''}` : 'Not configured'}</dd></div><div><dt>Active members</dt><dd><Users />{Number(item.member_count || 0)}</dd></div></dl></article>)}</div> : <div className="empty-review"><Landmark /><h3>No taluks found</h3><p>Try another taluk code, name, or agent.</p></div>}
+    <SectionHeading title="Collection agents" />
+    {visibleAgents.length ? <div className="settings-list agent-admin-list">{visibleAgents.map(agent => <button key={String(agent.id)} onClick={() => setEditingAgent(agent)}><UserRound /><span><strong>{String(agent.full_name)}</strong><small>{String(agent.login_id)} · {String(agent.taluk_name || 'Unassigned')} · {titleCase(String(agent.account_status))}</small></span><Pencil /></button>)}</div> : <p className="subtle">No matching collection agents.</p>}
+    {setup && <InitialSetupModal kind={setup} onClose={() => setSetup(null)} reload={reload} notify={notify} />}
+    {editingTaluk && <EditTalukModal taluk={editingTaluk} onClose={() => setEditingTaluk(null)} reload={reload} notify={notify} />}
+    {replacingBank && <ReplaceBankModal taluk={replacingBank} onClose={() => setReplacingBank(null)} reload={reload} notify={notify} />}
+    {editingAgent && <EditAgentModal agent={editingAgent} onClose={() => setEditingAgent(null)} reload={reload} notify={notify} />}
+  </div>
+}
+
+function EditAgentModal({ agent, onClose, reload, notify }: { agent: Record<string, any>; onClose: () => void; reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
+  const { taluks } = useAppData()
+  const availableTaluks = taluks.filter(item => item.is_active && (!item.agent_profile_id || String(item.agent_profile_id) === String(agent.id)))
+  const [statusValue, setStatusValue] = useState(String(agent.account_status)), [talukId, setTalukId] = useState(String(agent.taluk_id || ''))
+  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSubmitting(true); setError('')
+    const values = new FormData(event.currentTarget)
+    try {
+      await workspaceApi.updateAgent(String(agent.id), { expected_version: Number(agent.version), full_name: String(values.get('full_name')).trim(), phone: String(values.get('phone')).trim() || null, account_status: statusValue, taluk_id: talukId || null, reason: String(values.get('reason')).trim() })
+      await reload(); notify('Agent details updated.'); onClose()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Agent could not be updated.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Edit collection agent" onClose={onClose}><form className="modal-form" onSubmit={submit}><section className="profile-data"><span>Login ID</span><strong>{String(agent.login_id)}</strong></section><div className="form-grid"><label>Full name<input name="full_name" required minLength={2} defaultValue={String(agent.full_name)} /></label><label>Phone<input name="phone" inputMode="tel" defaultValue={String(agent.phone || '')} /></label></div><div className="form-grid"><label>Account status<select value={statusValue} onChange={event => { const value = event.target.value; setStatusValue(value); if (value !== 'ACTIVE') setTalukId('') }}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option value="LOCKED">Locked</option></select></label><label>Taluk assignment<select value={talukId} onChange={event => setTalukId(event.target.value)} disabled={statusValue !== 'ACTIVE'}><option value="">Unassigned</option>{availableTaluks.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.name)}</option>)}</select></label></div>{talukId !== String(agent.taluk_id || '') && <p className="audit-note"><ShieldCheck /> Changing assignment ends the previous taluk bank configuration. Configure the destination bank afterward.</p>}<label>Reason for change<textarea name="reason" required minLength={3} maxLength={500} rows={2} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? 'Saving…' : 'Save changes'}</button></div></form></Modal>
+}
+
+function EditTalukModal({ taluk, onClose, reload, notify }: { taluk: Record<string, any>; onClose: () => void; reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
+  const [active, setActive] = useState(Boolean(taluk.is_active)), [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSubmitting(true); setError('')
+    const values = new FormData(event.currentTarget)
+    try {
+      await workspaceApi.updateTaluk(String(taluk.id), { expected_version: Number(taluk.version), code: String(values.get('code')).trim().toUpperCase(), name: String(values.get('name')).trim(), district: String(values.get('district')).trim() || null, is_active: active, reason: String(values.get('reason')).trim() })
+      await reload(); notify('Taluk details updated.'); onClose()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Taluk could not be updated.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Edit taluk" onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="form-grid"><label>Taluk code<input name="code" required minLength={2} maxLength={20} pattern="[A-Za-z0-9_-]+" defaultValue={String(taluk.code)} /></label><label>Taluk name<input name="name" required minLength={2} maxLength={120} defaultValue={String(taluk.name)} /></label></div><label>District<input name="district" maxLength={120} defaultValue={String(taluk.district || '')} /></label><label className="toggle-row"><span><strong>Active taluk</strong><small>Deactivation is blocked while assignments or active members remain.</small></span><input type="checkbox" checked={active} onChange={event => setActive(event.target.checked)} /></label><label>Reason for change<textarea name="reason" required minLength={3} maxLength={500} rows={2} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? 'Saving…' : 'Save changes'}</button></div></form></Modal>
+}
+
+function ReplaceBankModal({ taluk, onClose, reload, notify }: { taluk: Record<string, any>; onClose: () => void; reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
+  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSubmitting(true); setError('')
+    const values = new FormData(event.currentTarget)
+    try {
+      await workspaceApi.replaceBank(String(taluk.bank_account_id), { taluk_id: String(taluk.id), agent_profile_id: String(taluk.agent_profile_id), bank_name: String(values.get('bank_name')).trim(), branch_name: String(values.get('branch_name')).trim(), account_holder_name: String(values.get('account_holder_name')).trim(), account_number: String(values.get('account_number')).trim(), ifsc_code: String(values.get('ifsc_code')).trim().toUpperCase(), reason: String(values.get('reason')).trim() })
+      await reload(); notify('Bank account replaced. The previous account remains in history.'); onClose()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Bank account could not be replaced.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Replace bank account" onClose={onClose}><form className="modal-form" onSubmit={submit}><section className="bank-destination"><Landmark /><div><span>Current account</span><strong>{String(taluk.bank_name)} ···· {String(taluk.bank_last4)}</strong><small>{String(taluk.name)} Taluk</small></div></section><div className="form-grid"><label>Bank name<input name="bank_name" required minLength={2} defaultValue={String(taluk.bank_name || '')} /></label><label>Branch name<input name="branch_name" required minLength={2} defaultValue={String(taluk.bank_branch_name || '')} /></label></div><label>Account holder name<input name="account_holder_name" required minLength={2} defaultValue={String(taluk.bank_account_holder_name || '')} /></label><div className="form-grid"><label>New account number<input name="account_number" required minLength={6} inputMode="numeric" pattern="[0-9]+" /></label><label>IFSC code<input name="ifsc_code" required pattern="[A-Za-z]{4}0[A-Za-z0-9]{6}" defaultValue={String(taluk.bank_ifsc_code || '')} /></label></div><label>Reason for replacement<textarea name="reason" required minLength={3} maxLength={500} rows={2} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? 'Replacing…' : 'Replace account'}</button></div></form></Modal>
+}
+
+function EditMemberModal({ member, onClose, reload, notify }: { member: MemberRecord; onClose: () => void; reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
+  const { taluks } = useAppData()
+  const readyTaluks = taluks.filter(item => item.is_active && item.agent_name && item.bank_name)
+  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSubmitting(true); setError('')
+    const values = new FormData(event.currentTarget)
+    try {
+      await workspaceApi.updateMember(member.id, { expected_version: Number(member.version), profile_expected_version: Number(member.profileVersion), member_code: String(values.get('member_code')).trim().toUpperCase(), full_name: String(values.get('full_name')).trim(), phone: String(values.get('phone')).trim() || null, taluk_id: String(values.get('taluk_id')), joined_on: String(values.get('joined_on')), account_status: String(values.get('account_status')).toUpperCase(), reason: String(values.get('reason')).trim() })
+      await reload(); notify('Member details updated.'); onClose()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Member could not be updated.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Edit member" onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="form-grid"><label>Member code<input name="member_code" required minLength={2} maxLength={40} defaultValue={member.code} /></label><label>Account status<select name="account_status" defaultValue={member.status.toUpperCase()}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option value="LOCKED">Locked</option></select></label></div><div className="form-grid"><label>Full name<input name="full_name" required minLength={2} defaultValue={member.name} /></label><label>Phone<input name="phone" inputMode="tel" defaultValue={member.phone} /></label></div><div className="form-grid"><label>Taluk<select name="taluk_id" required defaultValue={member.talukId}>{readyTaluks.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.name)}</option>)}</select></label><label>Joined on<input name="joined_on" type="date" required max={new Date().toISOString().slice(0, 10)} defaultValue={member.joinedOn} /></label></div><label>Reason for change<textarea name="reason" required minLength={3} maxLength={500} rows={2} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? 'Saving…' : 'Save changes'}</button></div></form></Modal>
+}
+
+function InitialSetupModal({ kind, onClose, reload, notify }: { kind: SetupKind; onClose: () => void; reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
+  const { taluks, agents } = useAppData()
+  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const availableAgentTaluks = taluks.filter(item => !item.agent_name)
+  const availableBankAgents = agents.filter(agent => !taluks.find(item => String(item.id) === String(agent.taluk_id))?.bank_name)
+  const readyTaluks = taluks.filter(item => item.agent_name && item.bank_name)
+  const titles: Record<SetupKind, string> = { taluk: 'Add taluk', agent: 'Add collection agent', bank: 'Configure bank account', member: 'Add member' }
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSubmitting(true); setError('')
+    const values = new FormData(event.currentTarget)
+    try {
+      if (kind === 'taluk') await workspaceApi.createTaluk({ code: String(values.get('code')).trim().toUpperCase(), name: String(values.get('name')).trim(), district: String(values.get('district')).trim() || null })
+      if (kind === 'agent') await workspaceApi.createAgent({ login_id: String(values.get('login_id')).trim(), temporary_password: String(values.get('temporary_password')), full_name: String(values.get('full_name')).trim(), phone: String(values.get('phone')).trim(), taluk_id: String(values.get('taluk_id')) })
+      if (kind === 'member') await workspaceApi.createMember({ login_id: String(values.get('login_id')).trim(), temporary_password: String(values.get('temporary_password')), member_code: String(values.get('member_code')).trim().toUpperCase(), full_name: String(values.get('full_name')).trim(), phone: String(values.get('phone')).trim(), taluk_id: String(values.get('taluk_id')), joined_on: String(values.get('joined_on')) })
+      if (kind === 'bank') {
+        const agent = agents.find(item => String(item.id) === String(values.get('agent_profile_id')))
+        if (!agent) throw new Error('Select an agent.')
+        await workspaceApi.createBank({ taluk_id: String(agent.taluk_id), agent_profile_id: String(agent.id), bank_name: String(values.get('bank_name')).trim(), branch_name: String(values.get('branch_name')).trim(), account_holder_name: String(values.get('account_holder_name')).trim(), account_number: String(values.get('account_number')).trim(), ifsc_code: String(values.get('ifsc_code')).trim().toUpperCase() })
+      }
+      await reload(); notify(`${titles[kind]} completed.`); onClose()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Setup could not be saved.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title={titles[kind]} onClose={onClose}><form className="modal-form" onSubmit={submit}>
+    {kind === 'taluk' && <><div className="form-grid"><label>Taluk code<input name="code" required minLength={2} maxLength={20} pattern="[A-Za-z0-9_-]+" placeholder="KTM" /></label><label>Taluk name<input name="name" required minLength={2} maxLength={120} placeholder="Kottayam" /></label></div><label>District <small>(optional)</small><input name="district" maxLength={120} /></label></>}
+    {kind === 'agent' && <><label>Taluk<select name="taluk_id" required defaultValue=""><option value="" disabled>Select an unassigned taluk</option>{availableAgentTaluks.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.name)}</option>)}</select></label><div className="form-grid"><label>Full name<input name="full_name" required minLength={2} /></label><label>Phone<input name="phone" required inputMode="tel" /></label></div><label>Login ID<input name="login_id" required autoComplete="off" /></label><label>Temporary password<input name="temporary_password" type="password" required minLength={8} autoComplete="new-password" /></label></>}
+    {kind === 'bank' && <><label>Assigned agent<select name="agent_profile_id" required defaultValue=""><option value="" disabled>Select an agent without a bank</option>{availableBankAgents.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.full_name)} - {String(item.taluk_name)}</option>)}</select></label><div className="form-grid"><label>Bank name<input name="bank_name" required minLength={2} /></label><label>Branch name<input name="branch_name" required minLength={2} /></label></div><label>Account holder name<input name="account_holder_name" required minLength={2} /></label><div className="form-grid"><label>Account number<input name="account_number" required minLength={6} inputMode="numeric" pattern="[0-9]+" /></label><label>IFSC code<input name="ifsc_code" required pattern="[A-Za-z]{4}0[A-Za-z0-9]{6}" placeholder="ABCD0123456" /></label></div></>}
+    {kind === 'member' && <><label>Taluk<select name="taluk_id" required defaultValue=""><option value="" disabled>Select a configured taluk</option>{readyTaluks.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.name)}</option>)}</select></label><div className="form-grid"><label>Member code<input name="member_code" required minLength={2} maxLength={30} /></label><label>Joined on<input name="joined_on" type="date" required max={new Date().toISOString().slice(0, 10)} /></label></div><div className="form-grid"><label>Full name<input name="full_name" required minLength={2} /></label><label>Phone<input name="phone" required inputMode="tel" /></label></div><label>Login ID<input name="login_id" required autoComplete="off" /></label><label>Temporary password<input name="temporary_password" type="password" required minLength={8} autoComplete="new-password" /></label></>}
+    {error && <p className="form-error"><AlertCircle />{error}</p>}
+    <div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={submitting}>{submitting ? 'Saving…' : 'Save'}</button></div>
+  </form></Modal>
+}
+
+function ReportsPage() {
+  const { cases, members } = useAppData()
+  const collected = cases.reduce((sum, item) => sum + item.collected, 0), verified = cases.reduce((sum, item) => sum + item.verified, 0)
+  const exportDues = () => downloadCsv(`outstanding-dues-${new Date().toISOString().slice(0, 10)}.csv`, [['Member code', 'Member name', 'Taluk', 'Pending amount'], ...members.map(item => [item.code, item.name, item.taluk, item.pending])])
+  const exportCases = () => downloadCsv(`death-cases-${new Date().toISOString().slice(0, 10)}.csv`, [['Case number', 'Deceased member', 'Taluk', 'Death date', 'Status', 'Required', 'Collected', 'Verified'], ...cases.map(item => [item.caseNumber, item.name, item.taluk, item.deathDate, item.status, item.requiredTotal, item.collected, item.verified])])
+  return <div className="page-stack"><section className="report-banner"><div><span>All recorded collections</span><strong>{formatMoney(collected)}</strong><small>{formatMoney(verified)} verified</small></div></section><div className="report-list"><button onClick={exportDues}><IndianRupee /><span><strong>Outstanding dues</strong><small>{formatMoney(members.reduce((sum, item) => sum + item.pending, 0))} across {members.length} members</small></span><Download /></button><button onClick={exportCases}><CalendarDays /><span><strong>Death cases</strong><small>{cases.length} records</small></span><Download /></button></div></div>
+}
+
+function SettingsPage() {
+  return <div className="page-stack settings-page"><section><SectionHeading title="Runtime settings" /><div className="profile-data"><span>Currency</span><strong>INR</strong><span>Timezone</span><strong>Asia/Kolkata</strong><span>Financial writes</span><strong>Online only</strong></div></section><section><SectionHeading title="Managed services" /><div className="profile-data"><span>Case photos</span><strong>Supabase Storage</strong><span>Notifications</span><strong>In-app events</strong><span>Collection rules</span><strong>Backend enforced</strong></div></section></div>
+}
+
+function CreateCaseModal({ onClose, onPublish }: { onClose: () => void; onPublish: () => void | Promise<void> }) {
+  const { members } = useAppData()
+  const [preview, setPreview] = useState<Record<string, any> | null>(null)
+  const [override, setOverride] = useState(false), [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  useEffect(() => { workspaceApi.casePreview().then(setPreview).catch(error => setError(error.message)) }, [])
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSubmitting(true); setError('')
+    try {
+      const values = new FormData(event.currentTarget)
+      const memberId = String(values.get('member_id') || ''), details = String(values.get('details') || '').trim()
+      const member = members.find(item => item.id === memberId), photo = values.get('photo')
+      if (!member || !(photo instanceof File) || !photo.size) throw new Error('Select a member and photo.')
+      const upload = await workspaceApi.uploadCasePhoto(photo)
+      await workspaceApi.publishCase({
+        deceased_member_id: memberId, death_date: String(values.get('death_date')),
+        title: `Helping request for ${member.name}`, details, photo_object_path: upload.object_path,
+        contribution_amount_override: override ? Number(values.get('override_amount')) : null,
+        override_reason: override ? String(values.get('override_reason') || '') : null,
+      })
+      await onPublish()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case could not be published.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Create death case" onClose={onClose}><form onSubmit={submit} className="modal-form"><label>Deceased member<select name="member_id" required defaultValue=""><option value="" disabled>Select active member</option>{members.filter(item => item.status === 'Active').map(item => <option value={item.id} key={item.id}>{item.code} — {item.name}</option>)}</select></label><label>Date of death<input name="death_date" type="date" required max={new Date().toISOString().slice(0, 10)} /></label><label>Case details<textarea name="details" required minLength={3} placeholder="Enter member-visible details" rows={3} /></label><label>Member photo<input name="photo" required type="file" accept="image/jpeg,image/png,image/webp" /></label>{preview && <section className="rate-preview"><div><span>Next monthly sequence</span><strong>Case {String(preview.next_sequence)}</strong></div><div><span>Default contribution</span><strong>{formatMoney(Number(preview.default_amount))}</strong></div></section>}<label className="toggle-row"><span><strong>Override contribution amount</strong><small>A reason is required and will be audited.</small></span><input type="checkbox" checked={override} onChange={event => setOverride(event.target.checked)} /></label>{override && <div className="form-grid"><label>Contribution amount<input name="override_amount" type="number" min="1" step="0.01" required /></label><label>Override reason<textarea name="override_reason" required minLength={3} rows={2} /></label></div>}{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting} type="submit">{submitting ? 'Publishing…' : 'Publish case'}</button></div></form></Modal>
+}
+
+function CollectionModal({ initialMemberId, onClose, onRecord }: { initialMemberId?: string; onClose: () => void; onRecord: (memberId: string, type: string, amount: number, method: CollectionRecord['method']) => void | Promise<void> }) {
+  const { members } = useAppData()
+  const activeMembers = members.filter(item => item.status === 'Active')
+  const [memberId, setMemberId] = useState(activeMembers.some(item => item.id === initialMemberId) ? initialMemberId! : activeMembers[0]?.id || '')
+  const member = members.find(item => item.id === memberId)
+  const targets = [
+    ...(member?.obligations || []).filter(item => item.available > 0).map(item => ({ value: item.caseId, label: item.label, available: item.available })),
+    ...(member?.permanentAccountId && (member.permanentCollected || 0) < (member.permanentTarget || 0)
+      ? [{ value: 'permanent', label: 'Permanent membership', available: (member.permanentTarget || 0) - (member.permanentCollected || 0) }] : [])
+  ]
+  const [target, setTarget] = useState(''), [amount, setAmount] = useState(0)
+  const [method, setMethod] = useState<CollectionRecord['method']>('Cash'), [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const selected = targets.find(item => item.value === target) || targets[0]
+  useEffect(() => { setTarget(''); setAmount(0) }, [memberId])
+  useEffect(() => { if (selected && !amount) setAmount(selected.available) }, [selected?.value])
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!member || !selected) { setError('This member has no collectible balance.'); return }
+    setSubmitting(true); setError('')
+    try { await onRecord(member.id, selected.value, amount, method) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Collection could not be recorded.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Record collection" onClose={onClose}><form className="modal-form" onSubmit={submit}><label>Member<select value={memberId} onChange={event => setMemberId(event.target.value)}>{members.filter(item => item.status === 'Active').map(item => <option value={item.id} key={item.id}>{item.code} — {item.name}</option>)}</select></label><label>Collection for<select value={selected?.value || ''} onChange={event => { setTarget(event.target.value); const next = targets.find(item => item.value === event.target.value); setAmount(next?.available || 0) }}>{targets.map(item => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>{selected && <section className="balance-box"><span>Available balance</span><strong>{formatMoney(selected.available)}</strong><small>Already collected amounts are excluded.</small></section>}<div className="form-grid"><label>Amount<input type="number" min="1" max={selected?.available || 0} step="0.01" value={amount} onChange={event => setAmount(Number(event.target.value))} /></label><label>Method<select value={method} onChange={event => setMethod(event.target.value as CollectionRecord['method'])}><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Other</option></select></label></div>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="audit-note"><ShieldCheck /> This creates an auditable collection entry. It cannot be silently deleted.</div><div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting || !selected || amount <= 0} type="submit">{submitting ? 'Recording…' : `Record ${formatMoney(amount)}`}</button></div></form></Modal>
+}
+
+function DepositModal({ collections, onClose, onSubmit }: { collections: CollectionRecord[]; onClose: () => void; onSubmit: (ids: string[], amount: number, reference: string) => void | Promise<void> }) {
+  const [selected, setSelected] = useState<string[]>(collections.map(item => item.id))
+  const [declared, setDeclared] = useState(0), [reference, setReference] = useState('')
+  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
+  const total = collections.filter(item => selected.includes(item.id)).reduce((sum, item) => sum + item.amount, 0)
+  useEffect(() => setDeclared(total), [total])
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setSubmitting(true); setError('')
+    try { await onSubmit(selected, declared, reference) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Deposit could not be submitted.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Create deposit batch" onClose={onClose} wide><form className="modal-form" onSubmit={submit}><section className="bank-destination"><Landmark /><div><span>Deposit destination</span><strong>Your assigned bank account</strong><small>The backend snapshots the configured bank details.</small></div></section><div className="select-head"><span>{selected.length} collection entries selected</span><button type="button" onClick={() => setSelected(selected.length === collections.length ? [] : collections.map(item => item.id))}>{selected.length === collections.length ? 'Clear all' : 'Select all'}</button></div><div className="collection-select">{collections.map(item => <label key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={() => setSelected(selected.includes(item.id) ? selected.filter(id => id !== item.id) : [...selected, item.id])} /><span><strong>{item.member}</strong><small>{item.label} · {item.receipt}</small></span><b>{formatMoney(item.amount)}</b></label>)}</div><section className="calculated-total"><span>System-calculated total</span><strong>{formatMoney(total)}</strong></section><div className="form-grid"><label>Actual deposited amount<input type="number" step="0.01" min="0" value={declared} onChange={event => setDeclared(Number(event.target.value))} /></label><label>Bank reference<input required value={reference} onChange={event => setReference(event.target.value)} placeholder="Enter transaction reference" /></label></div>{declared !== total && <p className="form-error"><AlertCircle /> The declared amount must exactly match {formatMoney(total)}.</p>}{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting || !selected.length || declared !== total} type="submit">{submitting ? 'Submitting…' : 'Submit for review'}</button></div></form></Modal>
+}
+
+function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  return <div className="modal-wrap" role="dialog" aria-modal="true"><button className="modal-scrim" onClick={onClose} aria-label="Close dialog backdrop" /><section className={`modal ${wide ? 'wide' : ''}`}><header><h2>{title}</h2><button className="icon-btn" onClick={onClose} aria-label="Close dialog"><X /></button></header><div className="modal-body">{children}</div></section></div>
+}
+
+function Metric({ icon: Icon, label, value, detail, tone = '' }: { icon: LucideIcon; label: string; value: string; detail?: string; tone?: string }) {
+  return <article className={`metric ${tone}`}><div className="metric-icon"><Icon /></div><div><span>{label}</span><strong>{value}</strong>{detail && <small>{detail}</small>}</div></article>
+}
+function SectionHeading({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) { return <div className="section-heading"><h2>{title}</h2>{action && <button onClick={onAction}>{action}<ChevronRight /></button>}</div> }
+function Progress({ value }: { value: number }) { return <div className="progress" aria-label={`${Math.round(value)}%`}><i style={{ width: `${Math.min(value, 100)}%` }} /></div> }
+function SearchBox({ placeholder, value, onChange }: { placeholder: string; value?: string; onChange?: (value: string) => void }) { return <label className="search-box"><Search /><input placeholder={placeholder} value={value} onChange={e => onChange?.(e.target.value)} /></label> }
+function Avatar({ name, color, large = false }: { name: string; color: string; large?: boolean }) { return <div className={`avatar ${large ? 'large' : ''}`} style={{ background: color }}>{initials(name)}</div> }
+function Status({ value }: { value: string }) { const key = value.toLowerCase().replaceAll(' ', '-'); return <span className={`status ${key}`}>{['Verified', 'Approved', 'Active', 'Permanent', 'Closed'].includes(value) ? <CheckCircle2 /> : value === 'Rejected' ? <XCircle /> : <Clock3 />}{value}</span> }
+
+function CaseCard({ item, onClick, memberDue, agent = false }: { item: CaseRecord; onClick: () => void; memberDue?: DueRecord; agent?: boolean }) {
+  const pct = item.requiredTotal ? Math.min((item.collected / item.requiredTotal) * 100, 100) : 0
+  return <article className="case-card" role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}><div className="case-card-main"><Avatar name={item.name} color={item.accent} /><div><span className="case-number">{item.caseNumber}</span><h3>{item.name}</h3><p><CalendarDays /> {item.deathDate} · {item.taluk}</p></div><ChevronRight className="chevron" /></div>{memberDue ? <div className="case-obligation"><div><span>Your contribution</span><strong>{formatMoney(memberDue.required)}</strong></div><Status value={getMoneyStatus(memberDue.required, memberDue.collected, memberDue.verified)} /></div> : <div className="case-progress"><div><span>{agent ? 'Taluk collected' : 'Collection progress'}</span><strong>{Math.round(pct)}%</strong></div><Progress value={pct} /><small>{formatMoney(item.collected)} collected · {formatMoney(item.verified)} verified</small></div>}</article>
+}
+
+function LedgerBreakdown({ required, collected, verified }: { required: number; collected: number; verified: number }) {
+  return <div className="ledger"><div><span>Required</span><strong>{formatMoney(required)}</strong></div><div><span>Collected</span><strong>{formatMoney(collected)}</strong></div><div><span>Awaiting</span><strong>{formatMoney(collected - verified)}</strong></div><div><span>Verified</span><strong>{formatMoney(verified)}</strong></div><div className="remaining"><span>Still to give agent</span><strong>{formatMoney(required - collected)}</strong></div></div>
+}
+
+function DepositRow({ deposit, admin = false, onClick, selected = false, action, actionLabel }: { deposit: DepositRecord; admin?: boolean; onClick?: () => void; selected?: boolean; action?: () => void; actionLabel?: string }) {
+  return <article className={`deposit-row ${onClick ? 'interactive' : ''} ${selected ? 'selected' : ''}`} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}><div className="deposit-icon"><Landmark /></div><div><span>{deposit.number}</span><strong>{admin ? deposit.agent : deposit.bank}</strong><small>{admin ? `${deposit.taluk} · ${deposit.submitted}` : deposit.submitted}</small></div><div><strong>{formatMoney(deposit.calculated)}</strong><Status value={deposit.status} /></div>{action ? <button className="small-action" onClick={event => { event.stopPropagation(); action() }}><ArrowRight />{actionLabel}</button> : onClick && <ChevronRight />}</article>
+}
+
+function MemberRow({ member, action, actionLabel = 'Collect', onClick }: { member: MemberRecord; action?: () => void; actionLabel?: string; onClick?: () => void }) {
+  return <article className={`member-row ${onClick ? 'interactive' : ''}`} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}><div className="avatar">{initials(member.name)}</div><div><span>{member.code}</span><strong>{member.name}</strong><small>{member.phone} · {member.membership} · {member.status}</small></div><div className="member-due"><span>Pending</span><strong>{formatMoney(member.pending)}</strong></div>{action ? <button className="small-action" onClick={e => { e.stopPropagation(); action() }}>{actionLabel === 'Edit' ? <Pencil /> : <HandCoins />}{actionLabel}</button> : onClick && <ChevronRight />}</article>
+}
+
+function initials(name: string) { return name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() }
+function MapPinIcon() { return <Landmark /> }
