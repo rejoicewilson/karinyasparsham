@@ -231,10 +231,15 @@ function Login({ onLogin }: { onLogin: (loginId: string, password: string) => Pr
   return (
     <main className="login-page">
       <section className="login-brand">
+        <strong className="malayalam-wordmark" lang="ml">കാരുണ്യസ്പർശം</strong>
         <img src="/logo.png" alt="Karunya Sparsham" />
         <div><strong>Karunya Sparsham</strong><span>Helping fund management</span></div>
       </section>
       <section className="login-panel">
+        <div className="login-identity">
+          <strong className="malayalam-wordmark" lang="ml">കാരുണ്യസ്പർശം</strong>
+          <img src="/logo.png" alt="Karunya Sparsham" />
+        </div>
         <div className="login-copy"><span className="eyebrow">SECURE ACCESS</span><h1>Welcome back</h1><p>Sign in with the login ID provided by your administrator.</p></div>
         <form onSubmit={submit}>
           <label>Login ID<input value={loginId} onChange={e => { setLoginId(e.target.value); setError('') }} autoComplete="username" placeholder="Enter your login ID" /></label>
