@@ -217,8 +217,10 @@ test.describe('financial collection workflow', () => {
         await expect(page.getByText('Death case published. WhatsApp messages are ready.')).toBeVisible()
         await expect(page.getByRole('heading', { name: /Notify members on WhatsApp/ })).toBeVisible()
         await expect(page.getByRole('link', {
-          name: `Send death case WhatsApp message to ${member.name}`,
+          name: `Open WhatsApp message for ${member.name}`,
         })).toBeVisible()
+        await page.getByRole('button', { name: `Mark WhatsApp message sent to ${member.name}` }).click()
+        await expect(page.getByRole('button', { name: `Undo sent status for ${member.name}` })).toBeVisible()
         await uiLogout(page)
       })
 

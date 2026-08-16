@@ -12,12 +12,12 @@ from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.security import CurrentActor, require_role
 from app.models.domain import (
-    AccountStatus, AgentTalukAssignment, AuditLog, BankAccount, DepositBatch, DepositStatus, Member,
-    MonthlyCaseCounter, Profile, Taluk, UserRole,
+    AccountStatus, AgentTalukAssignment, AuditLog, BankAccount, CaseObligation, DeathCase,
+    DepositBatch, DepositStatus, Member, MonthlyCaseCounter, Profile, Taluk, UserRole,
 )
 from app.schemas.api import (
     AgentCreate, AgentUpdate, BankAccountCreate, BankAccountReplace, DeathCaseCreate, DepositApprove, DepositReject,
-    MemberCreate, MemberUpdate, TalukCreate, TalukUpdate,
+    DeathCaseWhatsAppStatusUpdate, MemberCreate, MemberUpdate, TalukCreate, TalukUpdate,
 )
 from app.services.ledger import publish_death_case, review_deposit
 from app.services.supabase_admin import create_auth_user, delete_auth_user, service_headers
@@ -549,6 +549,56 @@ async def create_death_case(
 ):
     case = await publish_death_case(db, actor, payload, request_id(request))
     return success(request, case)
+
+
+@router.put("/death-cases/{case_id}/whatsapp/{member_id}")
+async def update_death_case_whatsapp_status(
+    case_id: uuid.UUID,
+    member_id: uuid.UUID,
+    payload: DeathCaseWhatsAppStatusUpdate,
+    request: Request,
+    actor: CurrentActor = Depends(admin_only),
+    db: AsyncSession = Depends(get_db),
+):
+    obligation = await db.scalar(select(CaseObligation.id).where(
+        CaseObligation.death_case_id == case_id,
+        CaseObligation.member_id == member_id,
+    ))
+    if obligation is None or await db.get(DeathCase, case_id) is None:
+        raise AppError("FORBIDDEN_RESOURCE", "Case notification recipient was not found.", 404)
+
+    latest = await db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.entity_type == "death_case_whatsapp",
+            AuditLog.entity_id == case_id,
+            AuditLog.after_data["member_id"].astext == str(member_id),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(1)
+    )
+    current_status = str(latest.after_data.get("status", "NOT_SENT")) if latest else "NOT_SENT"
+    next_status = payload.status
+    if current_status == "SENT" and next_status == "OPENED":
+        next_status = "SENT"
+    if current_status != next_status:
+        db.add(AuditLog(
+            actor_profile_id=actor.profile_id,
+            actor_role=actor.role,
+            action=f"DEATH_CASE_WHATSAPP_{next_status}",
+            entity_type="death_case_whatsapp",
+            entity_id=case_id,
+            before_data={"member_id": str(member_id), "status": current_status},
+            after_data={"member_id": str(member_id), "status": next_status},
+            request_id=request_id(request),
+        ))
+        await db.commit()
+    return success(request, {
+        "case_id": case_id,
+        "member_id": member_id,
+        "status": next_status,
+        "updated_at": datetime.now(timezone.utc),
+    })
 
 
 @router.get("/deposits")

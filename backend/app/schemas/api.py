@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
@@ -84,6 +85,10 @@ class DeathCaseCreate(BaseModel):
     @classmethod
     def strip_reason(cls, value: str | None) -> str | None:
         return value.strip() if value else None
+
+
+class DeathCaseWhatsAppStatusUpdate(BaseModel):
+    status: Literal["OPENED", "SENT", "NOT_SENT"]
 
 
 class CollectionCreate(BaseModel):

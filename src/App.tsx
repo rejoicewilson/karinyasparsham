@@ -18,12 +18,14 @@ type Session = {
 }
 type Toast = { text: string; tone?: 'success' | 'danger' }
 type Notice = { id: string; title: string; body: string; time: string; unread: boolean; kind: string }
+type CaseWhatsAppTracking = { caseId: string; memberId: string; status: 'OPENED' | 'SENT' | 'NOT_SENT'; updatedAt: string }
 type AppData = {
   cases: CaseRecord[]; members: MemberRecord[]; memberDues: DueRecord[]; notifications: Notice[];
-  taluks: Record<string, any>[]; agents: Record<string, any>[]; bankAccounts: Record<string, any>[]
+  taluks: Record<string, any>[]; agents: Record<string, any>[]; bankAccounts: Record<string, any>[];
+  caseWhatsAppTracking: CaseWhatsAppTracking[]
 }
 
-const emptyData: AppData = { cases: [], members: [], memberDues: [], notifications: [], taluks: [], agents: [], bankAccounts: [] }
+const emptyData: AppData = { cases: [], members: [], memberDues: [], notifications: [], taluks: [], agents: [], bankAccounts: [], caseWhatsAppTracking: [] }
 const DataContext = createContext<AppData>(emptyData)
 const useAppData = () => useContext(DataContext)
 
@@ -113,8 +115,12 @@ function mapWorkspace(raw: Workspace) {
     id: String(item.id), title: String(item.title), body: String(item.body), time: dateTimeText(String(item.created_at)),
     unread: !item.read, kind: String(item.type).includes('VERIFIED') ? 'verified' : 'case'
   }))
+  const caseWhatsAppTracking: CaseWhatsAppTracking[] = (raw.case_whatsapp_tracking || []).map(item => ({
+    caseId: String(item.case_id), memberId: String(item.member_id),
+    status: String(item.status) as CaseWhatsAppTracking['status'], updatedAt: dateTimeText(String(item.updated_at)),
+  }))
   return {
-    data: { cases, members, memberDues, notifications, taluks: raw.taluks, agents: raw.agents || [], bankAccounts: raw.bank_accounts || [] },
+    data: { cases, members, memberDues, notifications, taluks: raw.taluks, agents: raw.agents || [], bankAccounts: raw.bank_accounts || [], caseWhatsAppTracking },
     collections, deposits, session: toSession(raw.profile)
   }
 }
@@ -469,9 +475,17 @@ function CaseDetail({ caseId, member = false, admin = false }: { caseId: string;
 }
 
 function CaseWhatsAppList({ item }: { item: CaseRecord }) {
-  const { members } = useAppData()
+  const { members, caseWhatsAppTracking } = useAppData()
   const [query, setQuery] = useState('')
+  const [statuses, setStatuses] = useState<Record<string, CaseWhatsAppTracking['status']>>({})
+  const [updating, setUpdating] = useState<string[]>([])
+  const [error, setError] = useState('')
   const affected = members.filter(member => member.obligations?.some(obligation => obligation.caseId === item.id))
+  useEffect(() => {
+    setStatuses(Object.fromEntries(caseWhatsAppTracking
+      .filter(entry => entry.caseId === item.id)
+      .map(entry => [entry.memberId, entry.status])))
+  }, [caseWhatsAppTracking, item.id])
   const term = query.trim().toLowerCase()
   const visible = affected.filter(member => !term
     || member.name.toLowerCase().includes(term)
@@ -491,19 +505,61 @@ function CaseWhatsAppList({ item }: { item: CaseRecord }) {
     '',
     'Thank you.',
   ].join('\n')
+  const statusFor = (memberId: string) => statuses[memberId] || 'NOT_SENT'
+  const saveStatus = async (memberId: string, status: CaseWhatsAppTracking['status']) => {
+    const previous = statusFor(memberId)
+    setError('')
+    setStatuses(current => ({ ...current, [memberId]: status }))
+    setUpdating(current => [...current, memberId])
+    try {
+      const saved = await workspaceApi.updateCaseWhatsAppStatus(item.id, memberId, status)
+      setStatuses(current => ({ ...current, [memberId]: saved.status }))
+    } catch (reason) {
+      setStatuses(current => ({ ...current, [memberId]: previous }))
+      setError(reason instanceof ApiError ? reason.message : 'Could not update the WhatsApp status.')
+    } finally {
+      setUpdating(current => current.filter(id => id !== memberId))
+    }
+  }
+  const recordOpened = (memberId: string) => {
+    if (statusFor(memberId) === 'NOT_SENT') void saveStatus(memberId, 'OPENED')
+  }
+  const counts = affected.reduce((result, member) => {
+    const status = statusFor(member.id)
+    result[status] += 1
+    if (!whatsappLink(member.phone, 'Message')) result.noNumber += 1
+    return result
+  }, { SENT: 0, OPENED: 0, NOT_SENT: 0, noNumber: 0 })
 
   return <section className="case-whatsapp-panel">
     <SectionHeading title={`Notify members on WhatsApp (${affected.length})`} />
     {affected.length ? <>
+      <div className="whatsapp-summary" aria-label="WhatsApp notification summary">
+        <div><span>Sent</span><strong>{counts.SENT}</strong></div>
+        <div><span>WhatsApp opened</span><strong>{counts.OPENED}</strong></div>
+        <div><span>Not sent</span><strong>{counts.NOT_SENT}</strong></div>
+        <div><span>No number</span><strong>{counts.noNumber}</strong></div>
+      </div>
       <SearchBox value={query} onChange={setQuery} placeholder="Search member name, code, or taluk" />
+      {error && <p className="form-error">{error}</p>}
       <div className="selected-items case-whatsapp-list">
         {visible.map(member => {
           const href = whatsappLink(member.phone, messageFor(member))
+          const status = statusFor(member.id)
+          const busy = updating.includes(member.id)
           return <div key={member.id}>
             <span>{member.name}<small>{member.code} · {member.taluk}</small></span>
-            {href
-              ? <a className="small-action whatsapp-action" href={href} target="_blank" rel="noreferrer" aria-label={`Send death case WhatsApp message to ${member.name}`}><FaWhatsapp />WhatsApp</a>
-              : <span className="whatsapp-unavailable">No WhatsApp number</span>}
+            <div className="case-whatsapp-actions">
+              <span className={`whatsapp-tracking-status ${status.toLowerCase().replace('_', '-')}`}>
+                {status === 'SENT' ? 'Sent' : status === 'OPENED' ? 'Opened' : 'Not sent'}
+              </span>
+              {href ? <>
+                <a className="small-action whatsapp-action" href={href} target="_blank" rel="noreferrer" onClick={() => recordOpened(member.id)} aria-label={`Open WhatsApp message for ${member.name}`}><FaWhatsapp />WhatsApp</a>
+                <button className="small-action tracking-action" disabled={busy} onClick={() => void saveStatus(member.id, status === 'SENT' ? 'NOT_SENT' : 'SENT')} aria-label={status === 'SENT' ? `Undo sent status for ${member.name}` : `Mark WhatsApp message sent to ${member.name}`}>
+                  {status === 'SENT' ? <><X />Undo</> : <><Check />Mark sent</>}
+                </button>
+              </> : <span className="whatsapp-unavailable">No WhatsApp number</span>}
+            </div>
           </div>
         })}
       </div>

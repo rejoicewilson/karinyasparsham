@@ -13,6 +13,7 @@ from app.core.errors import AppError
 from app.core.security import CurrentActor, get_current_actor
 from app.models.domain import (
     AgentTalukAssignment,
+    AuditLog,
     BankAccount,
     CaseObligation,
     CollectionTransaction,
@@ -286,6 +287,7 @@ async def workspace(
         "agents": [],
         "bank_accounts": [],
         "notifications": [],
+        "case_whatsapp_tracking": [],
     }
 
     recipient_rows = (
@@ -421,5 +423,32 @@ async def workspace(
             }
             for bank in banks
         ]
+        case_ids = [item["id"] for item in data["cases"]]
+        if case_ids:
+            tracking_logs = (
+                await db.scalars(
+                    select(AuditLog)
+                    .where(
+                        AuditLog.entity_type == "death_case_whatsapp",
+                        AuditLog.entity_id.in_(case_ids),
+                    )
+                    .order_by(AuditLog.created_at)
+                )
+            ).all()
+            latest_tracking: dict[tuple, AuditLog] = {}
+            for log in tracking_logs:
+                member_id = (log.after_data or {}).get("member_id")
+                if member_id:
+                    latest_tracking[(log.entity_id, member_id)] = log
+            data["case_whatsapp_tracking"] = [
+                {
+                    "case_id": case_id,
+                    "member_id": member_id,
+                    "status": log.after_data.get("status", "NOT_SENT"),
+                    "updated_at": log.created_at,
+                    "updated_by": log.actor_profile_id,
+                }
+                for (case_id, member_id), log in latest_tracking.items()
+            ]
 
     return success(request, data)

@@ -25,6 +25,7 @@ export interface Workspace {
   agents: Record<string, any>[]
   bank_accounts: Record<string, any>[]
   notifications: Record<string, any>[]
+  case_whatsapp_tracking: Record<string, any>[]
 }
 
 export class ApiError extends Error {
@@ -96,6 +97,10 @@ export const workspaceApi = {
   publishCase: (payload: Record<string, unknown>) => apiRequest<Record<string, any>>('/admin/death-cases', {
     method: 'POST', body: JSON.stringify(payload)
   }),
+  updateCaseWhatsAppStatus: (caseId: string, memberId: string, status: 'OPENED' | 'SENT' | 'NOT_SENT') =>
+    apiRequest<Record<string, any>>(`/admin/death-cases/${caseId}/whatsapp/${memberId}`, {
+      method: 'PUT', body: JSON.stringify({ status })
+    }),
   createTaluk: (payload: Record<string, unknown>) => apiRequest('/admin/taluks', { method: 'POST', body: JSON.stringify(payload) }),
   updateTaluk: (id: string, payload: Record<string, unknown>) => apiRequest(`/admin/taluks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   createAgent: (payload: Record<string, unknown>) => apiRequest('/admin/agents', { method: 'POST', body: JSON.stringify(payload) }),

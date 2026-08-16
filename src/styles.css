@@ -302,7 +302,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .case-whatsapp-panel { display: grid; gap: 12px; }
 .case-whatsapp-panel .section-heading { margin-bottom: 0; }
 .case-whatsapp-list { max-height: 440px; overflow-y: auto; background: white; }
+.case-whatsapp-list > div { gap: 12px; }
 .case-whatsapp-list .small-action { flex: 0 0 auto; }
+.whatsapp-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.whatsapp-summary > div { min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: white; display: grid; gap: 2px; }
+.whatsapp-summary span { color: var(--muted); font-size: 9px; }
+.whatsapp-summary strong { font-size: 16px; }
+.case-whatsapp-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.whatsapp-tracking-status { padding: 4px 7px; border-radius: 999px; background: #eef1ef; color: #58635c; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.whatsapp-tracking-status.sent { background: var(--green-soft); color: var(--green); }
+.whatsapp-tracking-status.opened { background: var(--amber-soft); color: #916500; }
+.tracking-action svg { width: 14px; height: 14px; }
 .admin-whatsapp-action { text-decoration: none; }
 .review-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
 .empty-review { min-height: 430px; display: grid; align-content: center; justify-items: center; text-align: center; color: var(--muted); }
@@ -476,6 +486,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 }
 
 @media (max-width: 440px) {
+  .whatsapp-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .toolbar { align-items: stretch; flex-wrap: wrap; }
   .toolbar .search-box { flex-basis: 100%; }
   .toolbar .primary { flex: 1; }
