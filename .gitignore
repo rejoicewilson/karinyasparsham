@@ -13,6 +13,9 @@ dist/
 *.tsbuildinfo
 .browser-profile*/
 .edge-profile*/
+playwright-report/
+test-results/
+blob-report/
 
 # Python
 __pycache__/
