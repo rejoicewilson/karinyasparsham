@@ -93,7 +93,7 @@ export const workspaceApi = {
     return apiRequest<{ object_path: string }>('/admin/death-cases/photo', { method: 'POST', body })
   },
   casePreview: () => apiRequest<Record<string, any>>('/admin/death-cases/preview', { method: 'POST' }),
-  publishCase: (payload: Record<string, unknown>) => apiRequest('/admin/death-cases', {
+  publishCase: (payload: Record<string, unknown>) => apiRequest<Record<string, any>>('/admin/death-cases', {
     method: 'POST', body: JSON.stringify(payload)
   }),
   createTaluk: (payload: Record<string, unknown>) => apiRequest('/admin/taluks', { method: 'POST', body: JSON.stringify(payload) }),

@@ -349,7 +349,7 @@ function RoleRouter(props: {
     if (section === 'cases') return <CasesPage role="agent" />
     return <AgentDashboard collections={props.collections} deposits={props.deposits} />
   }
-  if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
+  if (section === 'cases' && detail) return <CaseDetail caseId={detail} admin />
   if (section === 'cases') return <AdminCases online={props.online} notify={props.notify} reload={props.reload} />
   if (section === 'deposits') return <AdminDeposits deposits={props.deposits} setDeposits={props.setDeposits} collections={props.collections} setCollections={props.setCollections} online={props.online} notify={props.notify} reload={props.reload} />
   if (section === 'members') return <MembersPage role="admin" reload={props.reload} notify={props.notify} />
@@ -457,14 +457,58 @@ function AdminCases({ online, notify, reload }: { online: boolean; notify: (mess
     const term = query.trim().toLowerCase()
     return matchesStatus && (!term || item.caseNumber.toLowerCase().includes(term) || item.name.toLowerCase().includes(term) || item.taluk.toLowerCase().includes(term))
   })
-  return <div className="page-stack"><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search case number or member" /><button className="primary" disabled={!online} onClick={() => setModal(true)}><Plus /> Create case</button></div><div className="filter-row">{(['All', 'Open', 'Closed', 'Cancelled'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status === 'All' ? 'All cases' : status}</button>)}</div>{visible.length ? <div className="case-list admin-cases">{visible.map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/admin/cases/${item.id}`)} />)}</div> : <div className="empty-review"><HeartHandshake /><h3>No cases found</h3><p>Try another search or status filter.</p></div>}{modal && <CreateCaseModal onClose={() => setModal(false)} onPublish={async () => { setModal(false); await reload(); notify('Death case published and obligations created.') }} />}</div>
+  return <div className="page-stack"><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search case number or member" /><button className="primary" disabled={!online} onClick={() => setModal(true)}><Plus /> Create case</button></div><div className="filter-row">{(['All', 'Open', 'Closed', 'Cancelled'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status === 'All' ? 'All cases' : status}</button>)}</div>{visible.length ? <div className="case-list admin-cases">{visible.map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/admin/cases/${item.id}`)} />)}</div> : <div className="empty-review"><HeartHandshake /><h3>No cases found</h3><p>Try another search or status filter.</p></div>}{modal && <CreateCaseModal onClose={() => setModal(false)} onPublish={async caseId => { setModal(false); await reload(); notify('Death case published. WhatsApp messages are ready.'); navigate(`/admin/cases/${caseId}`) }} />}</div>
 }
 
-function CaseDetail({ caseId, member = false }: { caseId: string; member?: boolean }) {
+function CaseDetail({ caseId, member = false, admin = false }: { caseId: string; member?: boolean; admin?: boolean }) {
   const navigate = useNavigate(); const { cases, memberDues } = useAppData(); const item = cases.find(c => c.id === caseId)
   if (!item) return <div className="empty-review"><HeartHandshake /><h3>Case not found</h3></div>
   const due = memberDues.find(d => d.caseId === item.id)
-  return <div className="page-stack detail-page"><button className="back-link" onClick={() => navigate(-1)}><ArrowLeft /> Back to cases</button><section className="case-hero"><CasePhoto item={item} large /><div><span className="case-number">{item.caseNumber}</span><h2>{item.name}</h2><p>{item.details}</p><div className="meta-row"><span><CalendarDays /> {item.deathDate}</span><span><MapPinIcon /> {item.taluk}</span><Status value={item.status} /></div></div></section>{member && due ? <><SectionHeading title="Your contribution" /><section className="contribution-detail"><div><span>Required</span><strong>{formatMoney(due.required)}</strong></div><div><span>Collected</span><strong>{formatMoney(due.collected)}</strong></div><div><span>Verified</span><strong>{formatMoney(due.verified)}</strong></div><div><span>Still to give</span><strong>{formatMoney(due.required - due.collected)}</strong></div></section><LedgerBreakdown required={due.required} collected={due.collected} verified={due.verified} /></> : <><section className="metric-grid compact"><Metric icon={IndianRupee} label="Required total" value={formatMoney(item.requiredTotal)} /><Metric icon={HandCoins} label="Collected" value={formatMoney(item.collected)} tone="amber" /><Metric icon={BadgeCheck} label="Verified" value={formatMoney(item.verified)} tone="green" /><Metric icon={Clock3} label="Awaiting" value={formatMoney(item.collected - item.verified)} tone="blue" /></section><SectionHeading title="Taluk progress" />{item.talukProgress.length ? <div className="taluk-progress">{item.talukProgress.map(progress => { const percent = progress.required ? progress.collected / progress.required * 100 : 0; return <div key={progress.id}><div><strong>{progress.name}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No obligations were created for this case.</p>}</>}</div>
+  return <div className="page-stack detail-page"><button className="back-link" onClick={() => navigate(-1)}><ArrowLeft /> Back to cases</button><section className="case-hero"><CasePhoto item={item} large /><div><span className="case-number">{item.caseNumber}</span><h2>{item.name}</h2><p>{item.details}</p><div className="meta-row"><span><CalendarDays /> {item.deathDate}</span><span><MapPinIcon /> {item.taluk}</span><Status value={item.status} /></div></div></section>{member && due ? <><SectionHeading title="Your contribution" /><section className="contribution-detail"><div><span>Required</span><strong>{formatMoney(due.required)}</strong></div><div><span>Collected</span><strong>{formatMoney(due.collected)}</strong></div><div><span>Verified</span><strong>{formatMoney(due.verified)}</strong></div><div><span>Still to give</span><strong>{formatMoney(due.required - due.collected)}</strong></div></section><LedgerBreakdown required={due.required} collected={due.collected} verified={due.verified} /></> : <><section className="metric-grid compact"><Metric icon={IndianRupee} label="Required total" value={formatMoney(item.requiredTotal)} /><Metric icon={HandCoins} label="Collected" value={formatMoney(item.collected)} tone="amber" /><Metric icon={BadgeCheck} label="Verified" value={formatMoney(item.verified)} tone="green" /><Metric icon={Clock3} label="Awaiting" value={formatMoney(item.collected - item.verified)} tone="blue" /></section><SectionHeading title="Taluk progress" />{item.talukProgress.length ? <div className="taluk-progress">{item.talukProgress.map(progress => { const percent = progress.required ? progress.collected / progress.required * 100 : 0; return <div key={progress.id}><div><strong>{progress.name}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No obligations were created for this case.</p>}{admin && <CaseWhatsAppList item={item} />}</>}</div>
+}
+
+function CaseWhatsAppList({ item }: { item: CaseRecord }) {
+  const { members } = useAppData()
+  const [query, setQuery] = useState('')
+  const affected = members.filter(member => member.obligations?.some(obligation => obligation.caseId === item.id))
+  const term = query.trim().toLowerCase()
+  const visible = affected.filter(member => !term
+    || member.name.toLowerCase().includes(term)
+    || member.code.toLowerCase().includes(term)
+    || member.taluk.toLowerCase().includes(term))
+  const messageFor = (member: MemberRecord) => [
+    'Karunya Sparsham',
+    '',
+    `Hello ${member.name},`,
+    `A new helping request has been created for ${item.name}.`,
+    `Case: ${item.caseNumber}`,
+    `Date: ${item.deathDate}`,
+    `Your contribution: ${formatMoney(item.amount)}`,
+    '',
+    'Please give the contribution to your assigned collection agent.',
+    `${window.location.origin}/member/cases/${item.id}`,
+    '',
+    'Thank you.',
+  ].join('\n')
+
+  return <section className="case-whatsapp-panel">
+    <SectionHeading title={`Notify members on WhatsApp (${affected.length})`} />
+    {affected.length ? <>
+      <SearchBox value={query} onChange={setQuery} placeholder="Search member name, code, or taluk" />
+      <div className="selected-items case-whatsapp-list">
+        {visible.map(member => {
+          const href = whatsappLink(member.phone, messageFor(member))
+          return <div key={member.id}>
+            <span>{member.name}<small>{member.code} · {member.taluk}</small></span>
+            {href
+              ? <a className="small-action whatsapp-action" href={href} target="_blank" rel="noreferrer" aria-label={`Send death case WhatsApp message to ${member.name}`}><FaWhatsapp />WhatsApp</a>
+              : <span className="whatsapp-unavailable">No WhatsApp number</span>}
+          </div>
+        })}
+      </div>
+      {!visible.length && <p className="subtle">No members match this search.</p>}
+    </> : <p className="subtle">No affected members were found for this case.</p>}
+  </section>
 }
 
 function MemberDues() {
@@ -855,7 +899,7 @@ function SettingsPage() {
   return <div className="page-stack settings-page"><section><SectionHeading title="Runtime settings" /><div className="profile-data"><span>Currency</span><strong>INR</strong><span>Timezone</span><strong>Asia/Kolkata</strong><span>Financial writes</span><strong>Online only</strong></div></section><section><SectionHeading title="Managed services" /><div className="profile-data"><span>Case photos</span><strong>Supabase Storage</strong><span>Notifications</span><strong>In-app events</strong><span>Collection rules</span><strong>Backend enforced</strong></div></section></div>
 }
 
-function CreateCaseModal({ onClose, onPublish }: { onClose: () => void; onPublish: () => void | Promise<void> }) {
+function CreateCaseModal({ onClose, onPublish }: { onClose: () => void; onPublish: (caseId: string) => void | Promise<void> }) {
   const { members } = useAppData()
   const [preview, setPreview] = useState<Record<string, any> | null>(null)
   const [override, setOverride] = useState(false), [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
@@ -868,13 +912,13 @@ function CreateCaseModal({ onClose, onPublish }: { onClose: () => void; onPublis
       const member = members.find(item => item.id === memberId), photo = values.get('photo')
       if (!member || !(photo instanceof File) || !photo.size) throw new Error('Select a member and photo.')
       const upload = await workspaceApi.uploadCasePhoto(photo)
-      await workspaceApi.publishCase({
+      const created = await workspaceApi.publishCase({
         deceased_member_id: memberId, death_date: String(values.get('death_date')),
         title: `Helping request for ${member.name}`, details, photo_object_path: upload.object_path,
         contribution_amount_override: override ? Number(values.get('override_amount')) : null,
         override_reason: override ? String(values.get('override_reason') || '') : null,
       })
-      await onPublish()
+      await onPublish(String(created.id))
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case could not be published.') }
     finally { setSubmitting(false) }
   }

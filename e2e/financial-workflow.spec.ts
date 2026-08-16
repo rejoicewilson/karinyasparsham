@@ -214,7 +214,11 @@ test.describe('financial collection workflow', () => {
           && new URL(response.url()).pathname.endsWith('/api/v1/admin/death-cases'))
         await page.getByRole('button', { name: 'Publish case' }).click()
         caseId = String((await responseData(await published, 'Publish death case')).id)
-        await expect(page.getByText('Death case published and obligations created.')).toBeVisible()
+        await expect(page.getByText('Death case published. WhatsApp messages are ready.')).toBeVisible()
+        await expect(page.getByRole('heading', { name: /Notify members on WhatsApp/ })).toBeVisible()
+        await expect(page.getByRole('link', {
+          name: `Send death case WhatsApp message to ${member.name}`,
+        })).toBeVisible()
         await uiLogout(page)
       })
 
