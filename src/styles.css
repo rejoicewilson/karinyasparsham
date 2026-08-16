@@ -303,6 +303,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .case-whatsapp-panel .section-heading { margin-bottom: 0; }
 .case-whatsapp-list { max-height: 440px; overflow-y: auto; background: white; }
 .case-whatsapp-list .small-action { flex: 0 0 auto; }
+.admin-whatsapp-action { text-decoration: none; }
 .review-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
 .empty-review { min-height: 430px; display: grid; align-content: center; justify-items: center; text-align: center; color: var(--muted); }
 .empty-review > svg { width: 42px; height: 42px; color: #8ea096; margin-bottom: 13px; }

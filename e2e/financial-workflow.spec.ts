@@ -238,6 +238,9 @@ test.describe('financial collection workflow', () => {
         await page.getByLabel('Bank reference').fill(`E2E-${suffix}`)
         await page.getByRole('button', { name: 'Submit for review' }).click()
         await expect(page.getByText('Deposit submitted for admin verification.')).toBeVisible()
+        const adminWhatsApp = page.getByRole('link', { name: 'WhatsApp admin' })
+        await expect(adminWhatsApp).toHaveAttribute('href', /wa\.me\/919447645196/)
+        await page.getByRole('button', { name: 'Close', exact: true }).click()
         await uiLogout(page)
       })
 

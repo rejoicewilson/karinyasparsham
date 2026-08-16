@@ -52,6 +52,7 @@ const whatsappLink = (phone: string, message: string) => {
   const number = whatsappNumber(phone)
   return number ? `https://wa.me/${number}?text=${encodeURIComponent(message)}` : ''
 }
+const ADMIN_WHATSAPP_NUMBER = '9447645196'
 const toSession = (profile: ApiProfile): Session => ({
   id: profile.id, role: profile.role.toLowerCase() as Role, name: profile.full_name,
   loginId: profile.login_id, talukName: profile.taluk_name || undefined, bank: profile.bank,
@@ -567,18 +568,41 @@ function AgentCollections({ initialMemberId, online, collections, setCollections
 function AgentDeposits({ online, collections, setCollections: _setCollections, deposits, setDeposits: _setDeposits, notify, reload, session }: { online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void>; session: Session }) {
   const [modal, setModal] = useState(false)
   const [filter, setFilter] = useState<'All' | DepositRecord['status']>('All')
+  const [adminNotice, setAdminNotice] = useState<{ number: string; amount: number; reference: string; submitted: string; href: string } | null>(null)
   const own = deposits.filter(item => item.agent === session.name && (filter === 'All' || item.status === filter))
   const bankLabel = session.bank ? `${session.bank.bank_name} •••• ${session.bank.last4}` : 'No bank account configured'
+  const prepareAdminNotice = (batch: Record<string, any>, entryCount: number) => {
+    const number = String(batch.deposit_number || batch.number || '')
+    const amount = Number(batch.calculated_total ?? batch.calculated ?? 0)
+    const reference = String(batch.bank_reference || batch.reference || 'Not provided')
+    const submitted = dateTimeText(String(batch.submitted_at || new Date().toISOString()))
+    const message = [
+      'Karunya Sparsham',
+      '',
+      'A deposit has been submitted for admin review.',
+      `Deposit: ${number}`,
+      `Agent: ${session.name}`,
+      `Taluk: ${session.talukName || 'Assigned taluk'}`,
+      `Amount: ${formatMoney(amount)}`,
+      `Collection entries: ${entryCount}`,
+      `Bank: ${session.bank?.bank_name || 'Assigned bank'}`,
+      `Reference: ${reference}`,
+      `Submitted: ${submitted}`,
+      '',
+      `${window.location.origin}/admin/deposits`,
+    ].join('\n')
+    setAdminNotice({ number, amount, reference, submitted, href: whatsappLink(ADMIN_WHATSAPP_NUMBER, message) })
+  }
   const create = async (ids: string[], amount: number, reference: string) => {
     const batch = await workspaceApi.createDeposit({ collection_ids: ids, declared_deposit_amount: amount, deposited_at: new Date().toISOString(), bank_reference: reference })
-    await workspaceApi.submitDeposit(String(batch.id), Number(batch.version || 1))
-    await reload(); setModal(false); notify('Deposit submitted for admin verification.')
+    const submitted = await workspaceApi.submitDeposit(String(batch.id), Number(batch.version || 1))
+    await reload(); setModal(false); prepareAdminNotice(submitted, ids.length); notify('Deposit submitted for admin verification.')
   }
   const submitDraft = async (deposit: DepositRecord) => {
-    try { await workspaceApi.submitDeposit(deposit.id, deposit.version || 1); await reload(); notify('Draft deposit submitted for admin verification.') }
+    try { const submitted = await workspaceApi.submitDeposit(deposit.id, deposit.version || 1); await reload(); prepareAdminNotice(submitted, deposit.collectionIds.length); notify('Draft deposit submitted for admin verification.') }
     catch (cause) { notify(cause instanceof Error ? cause.message : 'Draft deposit could not be submitted.') }
   }
-  return <div className="page-stack"><div className="toolbar"><div><h2 className="mobile-section-title">Deposit batches</h2><p className="subtle">{bankLabel}</p></div><button className="primary" disabled={!online || !session.bank || !collections.some(c => c.status === 'Recorded')} onClick={() => setModal(true)}><Plus /> New deposit</button></div><div className="filter-row">{(['All', 'Draft', 'Submitted', 'Approved', 'Rejected'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{own.length ? <div className="list-surface deposits-full">{own.map(d => <DepositRow key={d.id} deposit={d} action={d.status === 'Draft' && online ? () => submitDraft(d) : undefined} actionLabel="Submit" />)}</div> : <div className="empty-review"><Landmark /><h3>No deposits found</h3><p>Create a batch from recorded collections or choose another status.</p></div>}{modal && <DepositModal collections={collections.filter(c => c.status === 'Recorded')} onClose={() => setModal(false)} onSubmit={create} />}</div>
+  return <div className="page-stack"><div className="toolbar"><div><h2 className="mobile-section-title">Deposit batches</h2><p className="subtle">{bankLabel}</p></div><button className="primary" disabled={!online || !session.bank || !collections.some(c => c.status === 'Recorded')} onClick={() => setModal(true)}><Plus /> New deposit</button></div><div className="filter-row">{(['All', 'Draft', 'Submitted', 'Approved', 'Rejected'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{own.length ? <div className="list-surface deposits-full">{own.map(d => <DepositRow key={d.id} deposit={d} action={d.status === 'Draft' && online ? () => submitDraft(d) : undefined} actionLabel="Submit" />)}</div> : <div className="empty-review"><Landmark /><h3>No deposits found</h3><p>Create a batch from recorded collections or choose another status.</p></div>}{modal && <DepositModal collections={collections.filter(c => c.status === 'Recorded')} onClose={() => setModal(false)} onSubmit={create} />}{adminNotice && <DepositAdminNotice notice={adminNotice} onClose={() => setAdminNotice(null)} />}</div>
 }
 
 function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCollections: _setCollections, online, notify, reload }: { deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; online: boolean; notify: (message: string, tone?: Toast['tone']) => void; reload: () => Promise<void> }) {
@@ -964,6 +988,10 @@ function DepositModal({ collections, onClose, onSubmit }: { collections: Collect
     finally { setSubmitting(false) }
   }
   return <Modal title="Create deposit batch" onClose={onClose} wide><form className="modal-form" onSubmit={submit}><section className="bank-destination"><Landmark /><div><span>Deposit destination</span><strong>Your assigned bank account</strong><small>The backend snapshots the configured bank details.</small></div></section><div className="select-head"><span>{selected.length} collection entries selected</span><button type="button" onClick={() => setSelected(selected.length === collections.length ? [] : collections.map(item => item.id))}>{selected.length === collections.length ? 'Clear all' : 'Select all'}</button></div><div className="collection-select">{collections.map(item => <label key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={() => setSelected(selected.includes(item.id) ? selected.filter(id => id !== item.id) : [...selected, item.id])} /><span><strong>{item.member}</strong><small>{item.label} · {item.receipt}</small></span><b>{formatMoney(item.amount)}</b></label>)}</div><section className="calculated-total"><span>System-calculated total</span><strong>{formatMoney(total)}</strong></section><div className="form-grid"><label>Actual deposited amount<input type="number" step="0.01" min="0" value={declared} onChange={event => setDeclared(Number(event.target.value))} /></label><label>Bank reference<input required value={reference} onChange={event => setReference(event.target.value)} placeholder="Enter transaction reference" /></label></div>{declared !== total && <p className="form-error"><AlertCircle /> The declared amount must exactly match {formatMoney(total)}.</p>}{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting || !selected.length || declared !== total} type="submit">{submitting ? 'Submitting…' : 'Submit for review'}</button></div></form></Modal>
+}
+
+function DepositAdminNotice({ notice, onClose }: { notice: { number: string; amount: number; reference: string; submitted: string; href: string }; onClose: () => void }) {
+  return <Modal title="Deposit submitted" onClose={onClose}><div className="modal-form"><section className="bank-destination"><FaWhatsapp /><div><span>Admin WhatsApp</span><strong>+91 94476 45196</strong><small>Deposit review notification</small></div></section><div className="profile-data"><span>Deposit</span><strong>{notice.number}</strong><span>Amount</span><strong>{formatMoney(notice.amount)}</strong><span>Reference</span><strong>{notice.reference}</strong><span>Submitted</span><strong>{notice.submitted}</strong></div><div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Close</button><a className="primary admin-whatsapp-action" href={notice.href} target="_blank" rel="noreferrer"><FaWhatsapp /> WhatsApp admin</a></div></div></Modal>
 }
 
 function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {

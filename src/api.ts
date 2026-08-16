@@ -81,7 +81,7 @@ export const workspaceApi = {
   createDeposit: (payload: Record<string, unknown>) => apiRequest<Record<string, any>>('/agent/deposits', {
     method: 'POST', body: JSON.stringify(payload)
   }),
-  submitDeposit: (id: string, version: number) => apiRequest(`/agent/deposits/${id}/submit`, {
+  submitDeposit: (id: string, version: number) => apiRequest<Record<string, any>>(`/agent/deposits/${id}/submit`, {
     method: 'POST', body: JSON.stringify({ expected_version: version })
   }),
   reviewDeposit: (id: string, version: number, approve: boolean, reason?: string) =>
