@@ -1,11 +1,13 @@
 from collections import defaultdict
 from decimal import Decimal
 
+import httpx
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responses import success
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.security import CurrentActor, get_current_actor
@@ -26,10 +28,38 @@ from app.models.domain import (
     UserRole,
 )
 from app.services.rules import payment_status
+from app.services.supabase_admin import service_headers
 
 
 router = APIRouter()
 ZERO = Decimal("0")
+settings = get_settings()
+
+
+async def signed_case_photo_urls(paths: list[str]) -> dict[str, str]:
+    base = str(settings.SUPABASE_URL).rstrip("/")
+    urls: dict[str, str] = {}
+    async with httpx.AsyncClient(timeout=15) as client:
+        for path in set(paths):
+            try:
+                response = await client.post(
+                    f"{base}/storage/v1/object/sign/death-case-photos/{path}",
+                    headers=service_headers(),
+                    json={"expiresIn": 3600},
+                )
+            except httpx.HTTPError:
+                continue
+            if response.status_code != 200:
+                continue
+            signed_path = response.json().get("signedURL")
+            if signed_path:
+                if signed_path.startswith("http"):
+                    urls[path] = signed_path
+                elif signed_path.startswith("/storage/v1/"):
+                    urls[path] = f"{base}{signed_path}"
+                else:
+                    urls[path] = f"{base}/storage/v1/{signed_path.lstrip('/')}"
+    return urls
 
 
 async def case_rows(db: AsyncSession) -> list[dict]:
@@ -42,6 +72,9 @@ async def case_rows(db: AsyncSession) -> list[dict]:
             .order_by(DeathCase.created_at.desc())
         )
     ).all()
+    photo_urls = await signed_case_photo_urls(
+        [item.photo_object_path for item, _, _ in identity_rows if item.photo_object_path]
+    )
     obligations = (await db.scalars(select(CaseObligation))).all()
     taluk_ids = {obligation.taluk_id_snapshot for obligation in obligations}
     taluk_names = dict((await db.execute(
@@ -76,6 +109,7 @@ async def case_rows(db: AsyncSession) -> list[dict]:
             ],
             "status": item.status,
             "details": item.details,
+            "photo_url": photo_urls.get(item.photo_object_path),
         }
         for item, deceased_name, taluk_name in identity_rows
     ]

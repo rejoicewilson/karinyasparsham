@@ -16,6 +16,7 @@ export interface CaseRecord {
   talukProgress: Array<{ id: string; name: string; required: number; collected: number; verified: number }>
   status: 'Open' | 'Closed' | 'Cancelled'
   details: string
+  photoUrl?: string
   accent: string
 }
 

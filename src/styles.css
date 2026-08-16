@@ -151,6 +151,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .avatar.dark { background: #253a2d; }
 .avatar.large { width: 76px; height: 76px; font-size: 22px; }
 .avatar.xl { width: 82px; height: 82px; font-size: 23px; }
+.case-photo { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; background: #edf2ef; flex: 0 0 auto; }
+.case-photo.large { width: 96px; height: 96px; border-radius: 6px; }
 .case-number { color: var(--green); font-size: 10px; font-weight: 800; letter-spacing: .4px; }
 .case-card h3 { font-size: 14px; margin: 2px 0 4px; }
 .case-card p, .meta-row { color: var(--muted); font-size: 10px; display: flex; align-items: center; gap: 4px; }
