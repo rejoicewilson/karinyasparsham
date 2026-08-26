@@ -284,7 +284,7 @@ const navByRole: Record<Role, NavItem[]> = {
     { key: 'account', label: 'Account', icon: UserRound }
   ],
   agent: [
-    { key: 'dashboard', label: 'Home', icon: Home }, { key: 'collect', label: 'Collect', icon: HandCoins },
+    { key: 'dashboard', label: 'Home', icon: Home }, { key: 'collect', label: 'Collections', icon: HandCoins },
     { key: 'deposits', label: 'Deposits', icon: Landmark }, { key: 'members', label: 'Members', icon: Users },
     { key: 'account', label: 'Account', icon: UserRound }
   ],
@@ -332,8 +332,7 @@ function RoleRouter(props: {
   deposits: DepositRecord[]; setDeposits: (value: DepositRecord[]) => void; notify: (message: string, tone?: Toast['tone']) => void;
   reload: () => Promise<void>; session: Session
 }) {
-  const { pathname, search } = useLocation()
-  const navigate = useNavigate()
+  const { pathname } = useLocation()
   const section = pathname.split('/')[2] || 'dashboard'
   const detail = pathname.split('/')[3]
 
@@ -348,9 +347,9 @@ function RoleRouter(props: {
     return <MemberDashboard session={props.session} />
   }
   if (props.role === 'agent') {
-    if (section === 'collect') return <AgentCollections initialMemberId={new URLSearchParams(search).get('member') || undefined} online={props.online} collections={props.collections} setCollections={props.setCollections} notify={props.notify} reload={props.reload} />
+    if (section === 'collect') return <AgentCollections online={props.online} collections={props.collections} setCollections={props.setCollections} notify={props.notify} reload={props.reload} />
     if (section === 'deposits') return <AgentDeposits online={props.online} collections={props.collections} setCollections={props.setCollections} deposits={props.deposits} setDeposits={props.setDeposits} notify={props.notify} reload={props.reload} session={props.session} />
-    if (section === 'members' && detail) return <MemberDetail id={detail} onCollect={() => navigate(`/agent/collect?member=${encodeURIComponent(detail)}`)} />
+    if (section === 'members' && detail) return <MemberDetail id={detail} collections={props.collections} />
     if (section === 'members') return <MembersPage role="agent" />
     if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
     if (section === 'cases') return <CasesPage role="agent" />
@@ -400,14 +399,17 @@ function AgentDashboard({ collections, deposits }: { collections: CollectionReco
   const navigate = useNavigate()
   const { cases, members } = useAppData()
   const unbatched = collections.filter(c => c.status === 'Recorded').reduce((sum, c) => sum + c.amount, 0)
+  const totalOutstanding = members.reduce((sum, member) => sum + member.pending + Math.max(
+    (member.permanentAccountId ? member.permanentTarget || 0 : 0) - (member.permanentCollected || 0), 0
+  ), 0)
   return <div className="page-stack">
     <section className="metric-grid agent-metrics">
       <Metric icon={Users} label="Assigned members" value={String(members.length)} />
-      <Metric icon={IndianRupee} label="Total pending" value={formatMoney(members.reduce((sum, item) => sum + item.pending, 0))} tone="red" />
+      <Metric icon={IndianRupee} label="Total pending" value={formatMoney(totalOutstanding)} tone="red" />
       <Metric icon={WalletCards} label="Not deposited" value={formatMoney(unbatched)} tone="amber" />
       <Metric icon={Clock3} label="Awaiting review" value={String(deposits.filter(d => d.status === 'Submitted').length)} tone="blue" />
     </section>
-    <button className="primary action-wide" onClick={() => navigate('/agent/collect')}><HandCoins /> Record a collection <ArrowRight /></button>
+    <button className="primary action-wide" onClick={() => navigate('/agent/collect')}><HandCoins /> Record payment <ArrowRight /></button>
     <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
     <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agent key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
     <SectionHeading title="Deposit status" action="All deposits" onAction={() => navigate('/agent/deposits')} />
@@ -595,16 +597,26 @@ function PermanentPage() {
   return <div className="page-stack"><section className="permanent-hero"><div className="permanent-seal"><ShieldCheck /></div><span>Verified progress</span><strong>{formatMoney(verified)}</strong><p>of {formatMoney(target)} target</p><Progress value={target ? verified / target * 100 : 0} /><small>{formatMoney(remaining)} remaining</small></section><section className="metric-grid compact"><Metric icon={HandCoins} label="Collected" value={formatMoney(collected)} tone="blue" /><Metric icon={Clock3} label="Awaiting verification" value={formatMoney(Math.max(collected - verified, 0))} tone="amber" /><Metric icon={ShieldCheck} label="Membership" value={member?.membership || 'Regular'} /></section><p className="subtle">{collected ? `${formatMoney(collected)} has been recorded toward permanent membership.` : 'No permanent-membership instalments have been recorded.'}</p></div>
 }
 
-function AgentCollections({ initialMemberId, online, collections, setCollections: _setCollections, notify, reload }: { initialMemberId?: string; online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void> }) {
-  const [modal, setModal] = useState(Boolean(initialMemberId))
-  const [selectedMemberId, setSelectedMemberId] = useState<string | undefined>(initialMemberId)
+function AgentCollections({ online, collections, setCollections: _setCollections, notify, reload }: { online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void> }) {
+  const [modal, setModal] = useState(false)
+  const [selectedMemberId, setSelectedMemberId] = useState<string | undefined>()
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'Pending' | 'Partial' | 'Complete'>('Pending')
+  const [filter, setFilter] = useState<'Pending' | 'Partial'>('Pending')
   const { members } = useAppData()
+  const outstandingFor = (member: MemberRecord) => member.pending + Math.max(
+    (member.permanentAccountId ? member.permanentTarget || 0 : 0) - (member.permanentCollected || 0), 0
+  )
   const visible = members.filter(member => {
-    const hasPreviousDeathCollection = collections.some(item => item.memberId === member.id && item.type === 'Death contribution')
-    const matchesStatus = filter === 'Complete' ? member.pending <= 0 : filter === 'Partial' ? member.pending > 0 && hasPreviousDeathCollection : member.pending > 0 && !hasPreviousDeathCollection
-    return matchesStatus && (member.name.toLowerCase().includes(query.toLowerCase()) || member.code.toLowerCase().includes(query.toLowerCase()))
+    const outstanding = outstandingFor(member)
+    const hasPartialDeathPayment = member.obligations?.some(obligation => obligation.available > 0
+      && collections.some(item => item.memberId === member.id && item.caseId === obligation.caseId)) || false
+    const permanentOutstanding = Math.max(
+      (member.permanentAccountId ? member.permanentTarget || 0 : 0) - (member.permanentCollected || 0), 0
+    )
+    const hasPartialPermanentPayment = permanentOutstanding > 0 && (member.permanentCollected || 0) > 0
+    const hasPartialPayment = hasPartialDeathPayment || hasPartialPermanentPayment
+    const matchesStatus = outstanding > 0 && (filter === 'Partial' ? hasPartialPayment : !hasPartialPayment)
+    return member.status === 'Active' && matchesStatus && (member.name.toLowerCase().includes(query.toLowerCase()) || member.code.toLowerCase().includes(query.toLowerCase()))
   })
   const record = async (memberId: string, type: string, amount: number, method: CollectionRecord['method']) => {
     const member = members.find(item => item.id === memberId); if (!member) return
@@ -618,7 +630,7 @@ function AgentCollections({ initialMemberId, online, collections, setCollections
     })
     await reload(); setModal(false); notify(`${formatMoney(amount)} collection recorded for ${member.name}.`)
   }
-  return <div className="page-stack"><section className="collection-banner"><div><span>Collected, not deposited</span><strong>{formatMoney(collections.filter(c => c.status === 'Recorded').reduce((s, c) => s + c.amount, 0))}</strong></div><button className="secondary" onClick={() => location.assign('/agent/deposits')}>Prepare deposit <ArrowRight /></button></section><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search member name or code" /><button className="primary" disabled={!online} onClick={() => { setSelectedMemberId(undefined); setModal(true) }}><Plus /> Record payment</button></div><div className="filter-row">{(['Pending', 'Partial', 'Complete'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={() => { setSelectedMemberId(m.id); setModal(true) }} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search or collection-status filter.</p></div>}{modal && <CollectionModal initialMemberId={selectedMemberId} onClose={() => { setModal(false); setSelectedMemberId(undefined) }} onRecord={record} />}</div>
+  return <div className="page-stack"><section className="collection-banner"><div><span>Collected, not deposited</span><strong>{formatMoney(collections.filter(c => c.status === 'Recorded').reduce((s, c) => s + c.amount, 0))}</strong></div><button className="secondary" onClick={() => location.assign('/agent/deposits')}>Prepare deposit <ArrowRight /></button></section><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search outstanding payments" /><button className="primary" disabled={!online} onClick={() => { setSelectedMemberId(undefined); setModal(true) }}><Plus /> Record payment</button></div><div className="filter-row">{(['Pending', 'Partial'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} pending={outstandingFor(m)} action={() => { setSelectedMemberId(m.id); setModal(true) }} actionLabel="Record payment" />)}</div> : <div className="empty-review"><BadgeCheck /><h3>No outstanding payments found</h3><p>Try another search or check the other payment status.</p></div>}{modal && <CollectionModal initialMemberId={selectedMemberId} onClose={() => { setModal(false); setSelectedMemberId(undefined) }} onRecord={record} />}</div>
 }
 
 function AgentDeposits({ online, collections, setCollections: _setCollections, deposits, setDeposits: _setDeposits, notify, reload, session }: { online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void>; session: Session }) {
@@ -784,7 +796,7 @@ function MembersPage({ role, reload, notify }: { role: 'agent' | 'admin'; reload
   return <div className="page-stack"><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search name, member code or phone" />{role === 'admin' && <button className="primary" onClick={() => setAdding(true)}><Plus /> Add member</button>}</div><div className="filter-row">{(['Active', 'Permanent', 'Inactive'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status} ({counts[status]})</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={role === 'admin' ? () => setEditing(m) : undefined} actionLabel="Edit" onClick={role === 'agent' ? () => navigate(`/agent/members/${m.id}`) : undefined} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search or member filter.</p></div>}{adding && reload && notify && <InitialSetupModal kind="member" onClose={() => setAdding(false)} reload={reload} notify={notify} />}{editing && reload && notify && <EditMemberModal member={editing} onClose={() => setEditing(null)} reload={reload} notify={notify} />}</div>
 }
 
-function MemberDetail({ id, onCollect }: { id: string; onCollect: () => void }) {
+function MemberDetail({ id, collections }: { id: string; collections: CollectionRecord[] }) {
   const { members } = useAppData()
   const m = members.find(x => x.id === id)
   if (!m) return <div className="empty-review"><Users /><h3>Member not found</h3></div>
@@ -792,7 +804,8 @@ function MemberDetail({ id, onCollect }: { id: string; onCollect: () => void }) 
   const collected = m.permanentCollected || 0
   const awaiting = Math.max(collected - m.permanentVerified, 0)
   const stillToCollect = Math.max(target - collected, 0)
-  return <div className="page-stack detail-page"><button className="back-link" onClick={() => history.back()}><ArrowLeft /> Back to members</button><section className="profile-hero"><Avatar name={m.name} color="#276749" large /><div><span>{m.code}</span><h2>{m.name}</h2><p>{m.phone} · {m.taluk} Taluk</p><Status value={m.membership} /></div><button className="primary" onClick={onCollect}><HandCoins /> Record payment</button></section><section className="metric-grid compact"><Metric icon={IndianRupee} label="Death-case dues" value={formatMoney(m.pending)} tone="red" /><Metric icon={HandCoins} label="Permanent collected" value={formatMoney(collected)} tone="amber" /><Metric icon={Clock3} label="Awaiting verification" value={formatMoney(awaiting)} tone="blue" /><Metric icon={ShieldCheck} label="Permanent verified" value={formatMoney(m.permanentVerified)} tone="green" /></section><SectionHeading title="Permanent membership" /><section className="progress-section"><div className="progress-copy"><div><span>Collected</span><strong>{formatMoney(collected)}</strong></div><div><span>Verified</span><strong>{formatMoney(m.permanentVerified)}</strong></div></div><Progress value={target ? (m.permanentVerified / target) * 100 : 0} /><p><Clock3 /> {formatMoney(awaiting)} awaiting verification · {formatMoney(stillToCollect)} still to collect</p></section></div>
+  const payments = collections.filter(item => item.memberId === id)
+  return <div className="page-stack detail-page"><button className="back-link" onClick={() => history.back()}><ArrowLeft /> Back to members</button><section className="profile-hero"><Avatar name={m.name} color="#276749" large /><div><span>{m.code}</span><h2>{m.name}</h2><p>{m.phone} · {m.taluk} Taluk</p><Status value={m.membership} /></div></section><section className="metric-grid compact"><Metric icon={IndianRupee} label="Death-case dues" value={formatMoney(m.pending)} tone="red" /><Metric icon={HandCoins} label="Permanent collected" value={formatMoney(collected)} tone="amber" /><Metric icon={Clock3} label="Awaiting verification" value={formatMoney(awaiting)} tone="blue" /><Metric icon={ShieldCheck} label="Permanent verified" value={formatMoney(m.permanentVerified)} tone="green" /></section><SectionHeading title="Permanent membership" /><section className="progress-section"><div className="progress-copy"><div><span>Collected</span><strong>{formatMoney(collected)}</strong></div><div><span>Verified</span><strong>{formatMoney(m.permanentVerified)}</strong></div></div><Progress value={target ? (m.permanentVerified / target) * 100 : 0} /><p><Clock3 /> {formatMoney(awaiting)} awaiting verification · {formatMoney(stillToCollect)} still to collect</p></section><SectionHeading title="Payment history" />{payments.length ? <div className="payment-list">{payments.map(payment => <article key={payment.id}><div className={`payment-icon ${payment.status.toLowerCase()}`}>{payment.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{payment.label}</strong><span>{payment.receipt} · {payment.date}</span><small>{payment.method}</small></div><div><strong>{formatMoney(payment.amount)}</strong><Status value={payment.status === 'Recorded' || payment.status === 'Batched' ? 'Awaiting Verification' : 'Verified'} /></div></article>)}</div> : <p className="subtle">No payments have been recorded for this member.</p>}</div>
 }
 
 function NotificationsPage() {
@@ -1081,8 +1094,8 @@ function DepositRow({ deposit, admin = false, onClick, selected = false, action,
   return <article className={`deposit-row ${onClick ? 'interactive' : ''} ${selected ? 'selected' : ''}`} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}><div className="deposit-icon"><Landmark /></div><div><span>{deposit.number}</span><strong>{admin ? deposit.agent : deposit.bank}</strong><small>{admin ? `${deposit.taluk} · ${deposit.submitted}` : deposit.submitted}</small></div><div><strong>{formatMoney(deposit.calculated)}</strong><Status value={deposit.status} /></div>{action ? <button className="small-action" onClick={event => { event.stopPropagation(); action() }}><ArrowRight />{actionLabel}</button> : onClick && <ChevronRight />}</article>
 }
 
-function MemberRow({ member, action, actionLabel = 'Collect', onClick }: { member: MemberRecord; action?: () => void; actionLabel?: string; onClick?: () => void }) {
-  return <article className={`member-row ${onClick ? 'interactive' : ''}`} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}><div className="avatar">{initials(member.name)}</div><div><span>{member.code}</span><strong>{member.name}</strong><small>{member.phone} · {member.membership} · {member.status}</small></div><div className="member-due"><span>Pending</span><strong>{formatMoney(member.pending)}</strong></div>{action ? <button className="small-action" onClick={e => { e.stopPropagation(); action() }}>{actionLabel === 'Edit' ? <Pencil /> : <HandCoins />}{actionLabel}</button> : onClick && <ChevronRight />}</article>
+function MemberRow({ member, pending = member.pending, action, actionLabel = 'Record payment', onClick }: { member: MemberRecord; pending?: number; action?: () => void; actionLabel?: string; onClick?: () => void }) {
+  return <article className={`member-row ${onClick ? 'interactive' : ''}`} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}><div className="avatar">{initials(member.name)}</div><div><span>{member.code}</span><strong>{member.name}</strong><small>{member.phone} · {member.membership} · {member.status}</small></div><div className="member-due"><span>Pending</span><strong>{formatMoney(pending)}</strong></div>{action ? <button className="small-action" onClick={e => { e.stopPropagation(); action() }}>{actionLabel === 'Edit' ? <Pencil /> : <HandCoins />}{actionLabel}</button> : onClick && <ChevronRight />}</article>
 }
 
 function initials(name: string) { return name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() }
