@@ -126,8 +126,8 @@ function mapWorkspace(raw: Workspace) {
 }
 
 const pageTitles: Record<string, string> = {
-  dashboard: 'Overview', cases: 'Death cases', dues: 'My dues', payments: 'My payments',
-  permanent: 'Permanent membership', notifications: 'Notifications', account: 'Account',
+  dashboard: 'Overview', cases: 'Death cases', dues: 'Outstanding', payments: 'Payment history',
+  permanent: 'Account', notifications: 'Notifications', account: 'Account',
   collect: 'Collections', deposits: 'Deposits', members: 'Members', reports: 'Reports',
   taluks: 'Taluks & banks', settings: 'Settings'
 }
@@ -280,7 +280,7 @@ type NavItem = { key: string; label: string; icon: LucideIcon }
 const navByRole: Record<Role, NavItem[]> = {
   member: [
     { key: 'dashboard', label: 'Home', icon: Home }, { key: 'cases', label: 'Cases', icon: HeartHandshake },
-    { key: 'dues', label: 'Dues', icon: IndianRupee }, { key: 'payments', label: 'Payments', icon: Receipt },
+    { key: 'dues', label: 'Outstanding', icon: IndianRupee }, { key: 'payments', label: 'History', icon: Receipt },
     { key: 'account', label: 'Account', icon: UserRound }
   ],
   agent: [
@@ -343,7 +343,7 @@ function RoleRouter(props: {
     if (section === 'cases') return <CasesPage role="member" />
     if (section === 'dues') return <MemberDues />
     if (section === 'payments') return <MemberPayments collections={props.collections} />
-    if (section === 'permanent') return <PermanentPage />
+    if (section === 'permanent') return <AccountPage session={props.session} notify={props.notify} />
     return <MemberDashboard session={props.session} />
   }
   if (props.role === 'agent') {
@@ -372,20 +372,15 @@ function MemberDashboard({ session }: { session: Session }) {
   const permanentCollected = member?.permanentCollected || 0
   const permanentVerified = member?.permanentVerified || 0
   const awaiting = memberDues.reduce((sum, due) => sum + due.collected - due.verified, 0) + Math.max(permanentCollected - permanentVerified, 0)
-  const verified = memberDues.reduce((sum, due) => sum + due.verified, 0) + permanentVerified
   const target = member?.permanentTarget || 0
   return <div className="page-stack">
     <section className="member-summary band-green">
-      <div><span>Amount to give agent</span><strong>{formatMoney(toGive)}</strong><small>Across {memberDues.filter(d => d.required > d.collected).length} open cases</small></div>
-      <button onClick={() => navigate('/member/dues')}>View dues <ChevronRight size={18} /></button>
+      <div><span>Amount to give agent</span><strong>{formatMoney(toGive)}</strong><small>{memberDues.filter(d => d.required > d.collected).length} open obligations · {formatMoney(awaiting)} awaiting verification</small></div>
+      <button onClick={() => navigate('/member/dues')}>View outstanding <ChevronRight size={18} /></button>
     </section>
-    <section className="metric-grid compact">
-      <Metric icon={Clock3} label="Awaiting verification" value={formatMoney(awaiting)} tone="amber" />
-      <Metric icon={BadgeCheck} label="Verified total" value={formatMoney(verified)} tone="green" />
-    </section>
-    <SectionHeading title="Permanent membership" action="View account" onAction={() => navigate('/member/permanent')} />
+    <SectionHeading title="Permanent membership" action="View progress" onAction={() => navigate('/member/account')} />
     <section className="progress-section">
-      <div className="progress-copy"><div><span>Collected</span><strong>{formatMoney(permanentCollected)}</strong></div><div><span>Verified</span><strong>{formatMoney(permanentVerified)}</strong></div><div><span>Target</span><strong>{formatMoney(target)}</strong></div></div>
+      <div className="progress-copy"><div><span>Verified</span><strong>{formatMoney(permanentVerified)}</strong></div><div><span>Target</span><strong>{formatMoney(target)}</strong></div></div>
       <Progress value={target ? permanentVerified / target * 100 : 0} />
       <p><BadgeCheck size={17} /> {formatMoney(Math.max(target - permanentVerified, 0))} remaining to become permanent</p>
     </section>
@@ -575,7 +570,7 @@ function MemberDues() {
   const [filter, setFilter] = useState<'Outstanding' | 'All'>('Outstanding')
   const open = memberDues.filter(d => d.required - d.collected > 0)
   const visible = filter === 'Outstanding' ? open : memberDues
-  return <div className="page-stack"><section className="due-total"><div><span>Total amount to give agent</span><strong>{formatMoney(open.reduce((s, d) => s + d.required - d.collected, 0))}</strong></div><IndianRupee /></section><div className="filter-row"><button className={`chip ${filter === 'Outstanding' ? 'active' : ''}`} onClick={() => setFilter('Outstanding')}>Outstanding ({open.length})</button><button className={`chip ${filter === 'All' ? 'active' : ''}`} onClick={() => setFilter('All')}>All obligations ({memberDues.length})</button></div>{visible.length ? <div className="dues-list">{visible.map(d => <article key={d.caseId}><div className="item-top"><div><span>{d.caseNumber}</span><h3>{d.name}</h3></div><Status value={getMoneyStatus(d.required, d.collected, d.verified)} /></div><LedgerBreakdown required={d.required} collected={d.collected} verified={d.verified} /></article>)}</div> : <div className="empty-review"><BadgeCheck /><h3>No outstanding dues</h3><p>Your collected obligations are available under all obligations.</p></div>}</div>
+  return <div className="page-stack"><section className="due-total"><div><span>Outstanding amount</span><strong>{formatMoney(open.reduce((s, d) => s + d.required - d.collected, 0))}</strong></div><IndianRupee /></section><div className="filter-row"><button className={`chip ${filter === 'Outstanding' ? 'active' : ''}`} onClick={() => setFilter('Outstanding')}>Outstanding ({open.length})</button><button className={`chip ${filter === 'All' ? 'active' : ''}`} onClick={() => setFilter('All')}>All obligations ({memberDues.length})</button></div>{visible.length ? <div className="dues-list">{visible.map(d => <article key={d.caseId}><div className="item-top"><div><span>{d.caseNumber}</span><h3>{d.name}</h3></div><Status value={getMoneyStatus(d.required, d.collected, d.verified)} /></div><LedgerBreakdown required={d.required} collected={d.collected} verified={d.verified} /></article>)}</div> : <div className="empty-review"><BadgeCheck /><h3>No outstanding obligations</h3><p>Completed obligations remain available under All obligations.</p></div>}</div>
 }
 
 function MemberPayments({ collections }: { collections: CollectionRecord[] }) {
@@ -590,11 +585,10 @@ function MemberPayments({ collections }: { collections: CollectionRecord[] }) {
   return <div className="page-stack"><SearchBox value={query} onChange={setQuery} placeholder="Search payments" /><div className="filter-row">{(['All', 'Awaiting', 'Verified'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{mine.length ? <div className="payment-list">{mine.map(c => <article key={c.id}><div className={`payment-icon ${c.status.toLowerCase()}`}>{c.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{c.label}</strong><span>{c.receipt} · {c.date}</span><small>{c.method} · Collected by {c.collectorName}</small></div><div><strong>{formatMoney(c.amount)}</strong><Status value={c.status === 'Batched' || c.status === 'Recorded' ? 'Awaiting Verification' : 'Verified'} /></div></article>)}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Try another search or status filter.</p></div>}</div>
 }
 
-function PermanentPage() {
-  const { members } = useAppData(); const member = members[0]
-  const verified = member?.permanentVerified || 0, collected = member?.permanentCollected || 0
-  const target = member?.permanentTarget || 0, remaining = Math.max(target - verified, 0)
-  return <div className="page-stack"><section className="permanent-hero"><div className="permanent-seal"><ShieldCheck /></div><span>Verified progress</span><strong>{formatMoney(verified)}</strong><p>of {formatMoney(target)} target</p><Progress value={target ? verified / target * 100 : 0} /><small>{formatMoney(remaining)} remaining</small></section><section className="metric-grid compact"><Metric icon={HandCoins} label="Collected" value={formatMoney(collected)} tone="blue" /><Metric icon={Clock3} label="Awaiting verification" value={formatMoney(Math.max(collected - verified, 0))} tone="amber" /><Metric icon={ShieldCheck} label="Membership" value={member?.membership || 'Regular'} /></section><p className="subtle">{collected ? `${formatMoney(collected)} has been recorded toward permanent membership.` : 'No permanent-membership instalments have been recorded.'}</p></div>
+function PermanentMembershipDetails({ member }: { member: MemberRecord }) {
+  const verified = member.permanentVerified || 0, collected = member.permanentCollected || 0
+  const target = member.permanentTarget || 0, remaining = Math.max(target - verified, 0)
+  return <><section className="permanent-hero"><div className="permanent-seal"><ShieldCheck /></div><span>Verified progress</span><strong>{formatMoney(verified)}</strong><p>of {formatMoney(target)} target</p><Progress value={target ? verified / target * 100 : 0} /><small>{formatMoney(remaining)} remaining</small></section><section className="metric-grid compact"><Metric icon={HandCoins} label="Collected" value={formatMoney(collected)} tone="blue" /><Metric icon={Clock3} label="Awaiting verification" value={formatMoney(Math.max(collected - verified, 0))} tone="amber" /><Metric icon={ShieldCheck} label="Membership" value={member.membership || 'Regular'} /></section><p className="subtle">{collected ? `${formatMoney(collected)} has been recorded toward permanent membership.` : 'No permanent-membership instalments have been recorded.'}</p></>
 }
 
 function AgentCollections({ online, collections, setCollections: _setCollections, notify, reload }: { online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void> }) {
@@ -817,9 +811,11 @@ function NotificationsPage() {
 
 function AccountPage({ session, notify }: { session: Session; notify: (message: string, tone?: Toast['tone']) => void }) {
   const role = session.role, p = session
+  const { members } = useAppData()
+  const member = role === 'member' ? members[0] : undefined
   const [changingPassword, setChangingPassword] = useState(false)
   const subtitle = role === 'member' ? [p.memberCode, p.talukName && `${p.talukName} Taluk`].filter(Boolean).join(' · ') : role === 'agent' ? ['Collection agent', p.talukName && `${p.talukName} Taluk`].filter(Boolean).join(' · ') : 'System administrator'
-  return <div className="page-stack"><section className="account-head"><div className="avatar xl">{initials(p.name)}</div><h2>{p.name}</h2><p>{subtitle}</p><Status value="Active" /></section><section className="settings-list"><button onClick={() => setChangingPassword(true)}><LockKeyhole /><span><strong>Change password</strong><small>Update your account password</small></span><ChevronRight /></button></section><div className="profile-data"><span>Full name</span><strong>{p.name}</strong><span>Login ID</span><strong>{p.loginId}</strong><span>Role</span><strong>{role[0].toUpperCase() + role.slice(1)}</strong>{p.talukName && <><span>Taluk</span><strong>{p.talukName}</strong></>}</div>{changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} onChanged={() => { setChangingPassword(false); notify('Password changed successfully.') }} />}</div>
+  return <div className="page-stack"><section className="account-head"><div className="avatar xl">{initials(p.name)}</div><h2>{p.name}</h2><p>{subtitle}</p><Status value="Active" /></section>{member && <><SectionHeading title="Permanent membership progress" /><PermanentMembershipDetails member={member} /></>}<section className="settings-list"><button onClick={() => setChangingPassword(true)}><LockKeyhole /><span><strong>Change password</strong><small>Update your account password</small></span><ChevronRight /></button></section><div className="profile-data"><span>Full name</span><strong>{p.name}</strong><span>Login ID</span><strong>{p.loginId}</strong><span>Role</span><strong>{role[0].toUpperCase() + role.slice(1)}</strong>{p.talukName && <><span>Taluk</span><strong>{p.talukName}</strong></>}</div>{changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} onChanged={() => { setChangingPassword(false); notify('Password changed successfully.') }} />}</div>
 }
 
 function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
