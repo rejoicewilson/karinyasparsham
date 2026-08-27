@@ -25,6 +25,8 @@ button { color: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
 h1, h2, h3, p { margin: 0; }
 h1, h2, h3, strong { letter-spacing: 0; }
+.money-value { display: inline-flex; align-items: baseline; gap: 2px; white-space: nowrap; }
+.money-value > svg { width: .82em; height: .82em; flex: 0 0 auto; stroke-width: 2.4; transform: translateY(.06em); }
 h1, h2, h3 { font-family: 'Manrope', system-ui, sans-serif; }
 svg { width: 20px; height: 20px; stroke-width: 1.9; flex: 0 0 auto; }
 

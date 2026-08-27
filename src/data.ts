@@ -82,9 +82,11 @@ export interface DueRecord {
   verified: number
 }
 
-export const formatMoney = (value: number) => new Intl.NumberFormat('en-IN', {
-  style: 'currency', currency: 'INR', maximumFractionDigits: value % 1 ? 2 : 0
+export const formatAmount = (value: number) => new Intl.NumberFormat('en-IN', {
+  maximumFractionDigits: value % 1 ? 2 : 0
 }).format(value)
+
+export const formatMoney = (value: number) => `INR ${formatAmount(value)}`
 
 export const getMoneyStatus = (required: number, collected: number, verified: number): MoneyStatus => {
   if (collected === 0) return 'Unpaid'
