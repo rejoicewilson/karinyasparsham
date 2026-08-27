@@ -510,6 +510,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .member-due { display: none; }
   .small-action { width: 38px; padding: 0; justify-content: center; }
   .small-action { font-size: 0; }
+  .member-row .small-action { width: auto; padding: 0 9px; flex: 0 0 auto; font-size: 10px; white-space: nowrap; }
   .review-actions > button { flex: 1; padding: 0 8px; }
   .payment-list article { align-items: flex-start; }
   .payment-list article > div:last-child .status { display: none; }
