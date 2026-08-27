@@ -211,6 +211,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .toolbar { display: flex; gap: 10px; align-items: center; }
 .toolbar .search-box { max-width: 560px; }
 .toolbar .primary { flex: 0 0 auto; }
+.organization-actions { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.organization-actions button { min-height: 42px; padding: 0 12px; }
 .mobile-section-title { font-size: 17px; }
 .back-link { width: fit-content; min-height: 40px; display: flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--green); padding: 0; font-weight: 700; font-size: 12px; }
 .back-link svg { width: 17px; }
@@ -480,7 +482,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .admin .topbar { padding-left: 28px; padding-right: 28px; }
   .admin .content { padding-bottom: 45px; }
   .organization-grid { grid-template-columns: repeat(3, 1fr); }
-  .setup-steps { grid-template-columns: repeat(4, 1fr); }
+  .setup-steps { grid-template-columns: repeat(3, 1fr); }
   .setup-steps article { grid-template-columns: 34px minmax(0, 1fr); }
   .setup-steps article .secondary { grid-column: 1 / -1; }
 }
@@ -490,6 +492,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .toolbar { align-items: stretch; flex-wrap: wrap; }
   .toolbar .search-box { flex-basis: 100%; }
   .toolbar .primary { flex: 1; }
+  .organization-actions { width: 100%; margin-left: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .organization-actions button { min-width: 0; padding: 0 6px; }
   .member-summary { align-items: stretch; flex-direction: column; }
   .member-summary button { width: fit-content; }
   .metric { padding: 13px 10px; gap: 8px; }

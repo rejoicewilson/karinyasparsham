@@ -6,7 +6,7 @@ import {
   Check, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Clock3, Download,
   Eye, EyeOff, FileCheck2, HandCoins, HeartHandshake, Home, IndianRupee, Landmark,
   ListChecks, LockKeyhole, LogOut, Menu, MessageSquareText, MoreVertical, Pencil, Plus, Receipt,
-  Search, Settings, ShieldCheck, Smartphone, UserRound, Users, WalletCards, WifiOff, X,
+  Search, ShieldCheck, Smartphone, UserRound, Users, WalletCards, WifiOff, X,
   XCircle, type LucideIcon
 } from 'lucide-react'
 import { formatMoney, getMoneyStatus, type CaseRecord, type CollectionRecord, type DepositRecord, type DueRecord, type MemberRecord, type Role } from './data'
@@ -129,7 +129,7 @@ const pageTitles: Record<string, string> = {
   dashboard: 'Overview', cases: 'Death cases', dues: 'Outstanding', payments: 'Payment history',
   permanent: 'Account', notifications: 'Notifications', account: 'Account',
   collect: 'Collections', deposits: 'Deposits', members: 'Members', reports: 'Reports',
-  taluks: 'Taluks & banks', settings: 'Settings'
+  taluks: 'Organization'
 }
 
 export default function App() {
@@ -291,8 +291,7 @@ const navByRole: Record<Role, NavItem[]> = {
   admin: [
     { key: 'dashboard', label: 'Overview', icon: Home }, { key: 'cases', label: 'Death cases', icon: HeartHandshake },
     { key: 'deposits', label: 'Deposit review', icon: FileCheck2 }, { key: 'members', label: 'Members', icon: Users },
-    { key: 'taluks', label: 'Taluks & banks', icon: Landmark }, { key: 'reports', label: 'Reports', icon: ListChecks },
-    { key: 'settings', label: 'Settings', icon: Settings }
+    { key: 'taluks', label: 'Organization', icon: Landmark }, { key: 'reports', label: 'Reports', icon: ListChecks }
   ]
 }
 
@@ -361,7 +360,6 @@ function RoleRouter(props: {
   if (section === 'members') return <MembersPage role="admin" reload={props.reload} notify={props.notify} />
   if (section === 'taluks') return <TaluksPage reload={props.reload} notify={props.notify} />
   if (section === 'reports') return <ReportsPage />
-  if (section === 'settings') return <SettingsPage />
   return <AdminDashboard deposits={props.deposits} />
 }
 
@@ -425,7 +423,7 @@ function AdminDashboard({ deposits }: { deposits: DepositRecord[] }) {
     <section className="metric-grid admin-metrics">
       <Metric icon={Users} label="Active members" value={String(members.filter(m => m.status === 'Active').length)} detail={`${members.filter(m => m.membership === 'Permanent').length} permanent`} />
       <Metric icon={HeartHandshake} label="Open cases" value={String(cases.filter(c => c.status === 'Open').length)} detail={`${cases.length} total cases`} tone="red" />
-      <Metric icon={FileCheck2} label="Pending reviews" value={String(deposits.filter(d => d.status === 'Submitted').length)} detail="Awaiting admin action" tone="amber" />
+      <Metric icon={Clock3} label="Awaiting verification" value={formatMoney(cases.reduce((sum, item) => sum + item.collected - item.verified, 0))} detail="Collected, pending approval" tone="amber" />
       <Metric icon={IndianRupee} label="Outstanding dues" value={formatMoney(members.reduce((sum, item) => sum + item.pending, 0))} detail={`${taluks.length} taluks`} tone="blue" />
     </section>
     <div className="admin-columns">
@@ -836,7 +834,7 @@ function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onCh
 type SetupKind = 'taluk' | 'agent' | 'bank' | 'member'
 
 function TaluksPage({ reload, notify }: { reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
-  const { taluks, agents, bankAccounts, members } = useAppData()
+  const { taluks, agents, bankAccounts } = useAppData()
   const [query, setQuery] = useState('')
   const [setup, setSetup] = useState<SetupKind | null>(null)
   const [editingTaluk, setEditingTaluk] = useState<Record<string, any> | null>(null)
@@ -860,18 +858,20 @@ function TaluksPage({ reload, notify }: { reload: () => Promise<void>; notify: (
       bank_ifsc_code: taluk.bank_ifsc_code || bank?.ifsc_code,
     })
   }
-  const steps: { kind: SetupKind; title: string; detail: string; complete: boolean; enabled: boolean }[] = [
+  const organizationReady = taluks.length > 0 && agents.length > 0 && bankAccounts.length > 0
+  const canAddAgent = taluks.some(item => !item.agent_name)
+  const canAddBank = agents.some(agent => !taluks.find(item => String(item.id) === String(agent.taluk_id))?.bank_name)
+  const steps: { kind: Exclude<SetupKind, 'member'>; title: string; detail: string; complete: boolean; enabled: boolean }[] = [
     { kind: 'taluk', title: 'Taluks', detail: `${taluks.length} configured`, complete: taluks.length > 0, enabled: true },
     { kind: 'agent', title: 'Agents', detail: `${agents.length} assigned`, complete: agents.length > 0, enabled: taluks.length > 0 },
     { kind: 'bank', title: 'Bank accounts', detail: `${bankAccounts.length} configured`, complete: bankAccounts.length > 0, enabled: agents.length > 0 },
-    { kind: 'member', title: 'Members', detail: `${members.length} registered`, complete: members.length > 0, enabled: bankAccounts.length > 0 },
   ]
   return <div className="page-stack">
-    <section className="setup-flow">
+    {!organizationReady && <section className="setup-flow">
       <div className="setup-heading"><div><span>Initial setup</span><h2>Organization setup</h2></div><small>Complete in order</small></div>
       <div className="setup-steps">{steps.map((step, index) => <article className={step.complete ? 'complete' : ''} key={step.kind}><div className="setup-number">{step.complete ? <Check /> : index + 1}</div><div><strong>{step.title}</strong><span>{step.detail}</span></div><button className="secondary" disabled={!step.enabled} onClick={() => setSetup(step.kind)}><Plus /> Add</button></article>)}</div>
-    </section>
-    <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search taluk or agent" /><button className="primary" onClick={() => setSetup('taluk')}><Plus /> Add taluk</button></div>
+    </section>}
+    <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search taluk or agent" />{organizationReady && <div className="organization-actions"><button className="secondary" onClick={() => setSetup('taluk')}><Plus /> Taluk</button><button className="secondary" disabled={!canAddAgent} title={canAddAgent ? 'Add collection agent' : 'Add an unassigned taluk first'} onClick={() => setSetup('agent')}><UserRound /> Agent</button><button className="primary" disabled={!canAddBank} title={canAddBank ? 'Configure bank account' : 'Every assigned agent already has a bank'} onClick={() => setSetup('bank')}><Landmark /> Bank</button></div>}</div>
     {visibleTaluks.length ? <div className="organization-grid">{visibleTaluks.map(item => <article key={String(item.id)}><div className="org-head"><div className="org-code">{String(item.code)}</div><div className="org-actions"><button className="icon-btn" title="Edit taluk" onClick={() => setEditingTaluk(item)}><Pencil /></button><button className="icon-btn" title="Replace bank account" disabled={!item.bank_account_id && !bankForTaluk(item)} onClick={() => replaceBank(item)}><Landmark /></button></div></div><h3>{String(item.name)} Taluk</h3><dl><div><dt>Active agent</dt><dd>{String(item.agent_name || 'Not assigned')}</dd></div><div><dt>Bank account</dt><dd>{item.bank_name ? `${item.bank_name} •••• ${item.bank_last4 || ''}` : 'Not configured'}</dd></div><div><dt>Active members</dt><dd><Users />{Number(item.member_count || 0)}</dd></div></dl></article>)}</div> : <div className="empty-review"><Landmark /><h3>No taluks found</h3><p>Try another taluk code, name, or agent.</p></div>}
     <SectionHeading title="Collection agents" />
     {visibleAgents.length ? <div className="settings-list agent-admin-list">{visibleAgents.map(agent => <button key={String(agent.id)} onClick={() => setEditingAgent(agent)}><UserRound /><span><strong>{String(agent.full_name)}</strong><small>{String(agent.login_id)} · {String(agent.taluk_name || 'Unassigned')} · {titleCase(String(agent.account_status))}</small></span><Pencil /></button>)}</div> : <p className="subtle">No matching collection agents.</p>}
@@ -982,10 +982,6 @@ function ReportsPage() {
   const exportDues = () => downloadCsv(`outstanding-dues-${new Date().toISOString().slice(0, 10)}.csv`, [['Member code', 'Member name', 'Taluk', 'Pending amount'], ...members.map(item => [item.code, item.name, item.taluk, item.pending])])
   const exportCases = () => downloadCsv(`death-cases-${new Date().toISOString().slice(0, 10)}.csv`, [['Case number', 'Deceased member', 'Taluk', 'Death date', 'Status', 'Required', 'Collected', 'Verified'], ...cases.map(item => [item.caseNumber, item.name, item.taluk, item.deathDate, item.status, item.requiredTotal, item.collected, item.verified])])
   return <div className="page-stack"><section className="report-banner"><div><span>All recorded collections</span><strong>{formatMoney(collected)}</strong><small>{formatMoney(verified)} verified</small></div></section><div className="report-list"><button onClick={exportDues}><IndianRupee /><span><strong>Outstanding dues</strong><small>{formatMoney(members.reduce((sum, item) => sum + item.pending, 0))} across {members.length} members</small></span><Download /></button><button onClick={exportCases}><CalendarDays /><span><strong>Death cases</strong><small>{cases.length} records</small></span><Download /></button></div></div>
-}
-
-function SettingsPage() {
-  return <div className="page-stack settings-page"><section><SectionHeading title="Runtime settings" /><div className="profile-data"><span>Currency</span><strong>INR</strong><span>Timezone</span><strong>Asia/Kolkata</strong><span>Financial writes</span><strong>Online only</strong></div></section><section><SectionHeading title="Managed services" /><div className="profile-data"><span>Case photos</span><strong>Supabase Storage</strong><span>Notifications</span><strong>In-app events</strong><span>Collection rules</span><strong>Backend enforced</strong></div></section></div>
 }
 
 function CreateCaseModal({ onClose, onPublish }: { onClose: () => void; onPublish: (caseId: string) => void | Promise<void> }) {
