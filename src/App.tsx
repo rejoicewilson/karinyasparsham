@@ -697,16 +697,18 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
     return [...grouped.values()]
   }, [members, selectedCollections])
   const messageFor = (member: (typeof memberNotifications)[number]) => [
-    'Karunya Sparsham',
+    'കാരുണ്യസ്പർശം',
     '',
-    `Hello ${member.name},`,
-    `Your payment of ${formatMoney(member.amount)} has been deposited and verified.`,
+    `നമസ്കാരം ${member.name},`,
     '',
-    `Bank: ${selected?.bankName || 'Assigned bank'}`,
-    `Deposit: ${selected?.number || ''}`,
-    `Reference: ${selected?.reference || 'Not provided'}`,
+    `താങ്കളിൽ നിന്ന് സ്വീകരിച്ച ${formatAmount(member.amount)} രൂപയുടെ പേയ്‌മെന്റ് ബാങ്കിൽ നിക്ഷേപിച്ച് സ്ഥിരീകരിച്ചിരിക്കുന്നു.`,
     '',
-    'Thank you.',
+    `ബാങ്ക്: ${selected?.bankName || 'അസൈൻ ചെയ്ത ബാങ്ക്'}`,
+    `നിക്ഷേപ നമ്പർ: ${selected?.number || ''}`,
+    `ബാങ്ക് റഫറൻസ്: ${selected?.reference || 'നൽകിയിട്ടില്ല'}`,
+    '',
+    'നന്ദി,',
+    'കാരുണ്യസ്പർശം',
   ].join('\n')
   const filterCopy = filter === 'Submitted'
     ? { title: 'No deposits awaiting review', detail: 'An agent must submit a deposit batch before it can be approved or rejected.' }
