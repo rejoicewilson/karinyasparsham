@@ -442,6 +442,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .collection-select b { font-size: 11px; }
 .calculated-total { display: flex; justify-content: space-between; align-items: center; }
 .calculated-total strong { font: 750 20px Manrope; color: var(--green); }
+.money-value.money-value { display: inline-flex; align-items: baseline; flex: 0 0 auto; color: inherit; font: inherit; line-height: inherit; min-height: 0; opacity: 1; }
+.money-value > span { display: inline; color: inherit; font: inherit; line-height: inherit; min-height: 0; opacity: 1; }
 
 @media (min-width: 700px) {
   .login-page { grid-template-columns: minmax(300px, 46%) 1fr; }
