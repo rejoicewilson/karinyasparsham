@@ -513,7 +513,7 @@ FROM public.case_obligations o;
 
 INSERT INTO public.app_settings (key, value, description)
 VALUES
-  ('financial_rules', '{"first_three_amount":"200.00","later_case_amount":"100.00","permanent_target":"15000.00","timezone":"Asia/Kolkata"}'::jsonb, 'Controlled financial defaults'),
+  ('financial_rules', '{"first_two_amount":"200.00","later_case_amount":"100.00","permanent_target":"15000.00","timezone":"Asia/Kolkata"}'::jsonb, 'Controlled financial defaults'),
   ('upload_limits', '{"death_case_photo_mb":10,"deposit_receipt_mb":10}'::jsonb, 'Private upload size limits'),
   ('notification_templates', '{"version":1}'::jsonb, 'Notification template version')
 ON CONFLICT (key) DO NOTHING;

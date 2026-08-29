@@ -14,7 +14,7 @@ from app.services.rules import (
 
 @pytest.mark.parametrize(
     ("sequence", "amount"),
-    [(1, "200.00"), (2, "200.00"), (3, "200.00"), (4, "100.00"), (12, "100.00")],
+    [(1, "200.00"), (2, "200.00"), (3, "100.00"), (4, "100.00"), (12, "100.00")],
 )
 def test_monthly_case_amount(sequence, amount):
     assert default_case_amount(sequence) == Decimal(amount)

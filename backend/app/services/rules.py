@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 IST = ZoneInfo("Asia/Kolkata")
 FIRST_CASE_AMOUNT = Decimal("200.00")
 LATER_CASE_AMOUNT = Decimal("100.00")
+FIRST_CASE_AMOUNT_LIMIT = 2
 PERMANENT_TARGET = Decimal("15000.00")
 
 
@@ -17,7 +18,7 @@ def sequence_month(now: datetime) -> datetime.date:
 def default_case_amount(sequence: int) -> Decimal:
     if sequence < 1:
         raise ValueError("Monthly sequence must be positive")
-    return FIRST_CASE_AMOUNT if sequence <= 3 else LATER_CASE_AMOUNT
+    return FIRST_CASE_AMOUNT if sequence <= FIRST_CASE_AMOUNT_LIMIT else LATER_CASE_AMOUNT
 
 
 def payment_status(required: Decimal, collected: Decimal, verified: Decimal) -> str:
