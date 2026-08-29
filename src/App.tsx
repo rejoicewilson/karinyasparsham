@@ -488,18 +488,23 @@ function CaseWhatsAppList({ item }: { item: CaseRecord }) {
     || member.code.toLowerCase().includes(term)
     || member.taluk.toLowerCase().includes(term))
   const messageFor = (member: MemberRecord) => [
-    'Karunya Sparsham',
+    'കാരുണ്യസ്പർശം',
     '',
-    `Hello ${member.name},`,
-    `A new helping request has been created for ${item.name}.`,
-    `Case: ${item.caseNumber}`,
-    `Date: ${item.deathDate}`,
-    `Your contribution: ${formatMoney(item.amount)}`,
+    `നമസ്കാരം ${member.name},`,
     '',
-    'Please give the contribution to your assigned collection agent.',
+    `കാരുണ്യസ്പർശം അംഗമായ ${item.name}യുടെ നിര്യാണത്തെ തുടർന്ന് പുതിയ സഹായ സംഭാവന അഭ്യർത്ഥന ആരംഭിച്ചിരിക്കുന്നു.`,
+    '',
+    `കേസ് നമ്പർ: ${item.caseNumber}`,
+    `നിര്യാണ തീയതി: ${item.deathDate}`,
+    `താങ്കളുടെ വിഹിതം: ${formatAmount(item.amount)} രൂപ`,
+    '',
+    'ദയവായി തുക താങ്കൾക്ക് നിയോഗിച്ചിട്ടുള്ള കളക്ഷൻ ഏജന്റിന് കൈമാറുക.',
+    '',
+    'കൂടുതൽ വിവരങ്ങൾ:',
     `${window.location.origin}/member/cases/${item.id}`,
     '',
-    'Thank you.',
+    'നന്ദി,',
+    'കാരുണ്യസ്പർശം',
   ].join('\n')
   const statusFor = (memberId: string) => statuses[memberId] || 'NOT_SENT'
   const saveStatus = async (memberId: string, status: CaseWhatsAppTracking['status']) => {
