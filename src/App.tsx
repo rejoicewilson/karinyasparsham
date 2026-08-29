@@ -640,22 +640,28 @@ function AgentDeposits({ online, collections, setCollections: _setCollections, d
   const prepareAdminNotice = (batch: Record<string, any>, entryCount: number) => {
     const number = String(batch.deposit_number || batch.number || '')
     const amount = Number(batch.calculated_total ?? batch.calculated ?? 0)
-    const reference = String(batch.bank_reference || batch.reference || 'Not provided')
-    const submitted = dateTimeText(String(batch.submitted_at || new Date().toISOString()))
+    const reference = String(batch.bank_reference || batch.reference || 'നൽകിയിട്ടില്ല')
+    const submittedAt = String(batch.submitted_at || new Date().toISOString())
+    const submitted = dateTimeText(submittedAt)
+    const submittedForMessage = new Intl.DateTimeFormat('ml-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(submittedAt))
     const message = [
-      'Karunya Sparsham',
+      'കാരുണ്യസ്പർശം',
       '',
-      'A deposit has been submitted for admin review.',
-      `Deposit: ${number}`,
-      `Agent: ${session.name}`,
-      `Taluk: ${session.talukName || 'Assigned taluk'}`,
-      `Amount: ${formatMoney(amount)}`,
-      `Collection entries: ${entryCount}`,
-      `Bank: ${session.bank?.bank_name || 'Assigned bank'}`,
-      `Reference: ${reference}`,
-      `Submitted: ${submitted}`,
+      'അഡ്മിൻ പരിശോധനയ്ക്കായി ഒരു പുതിയ ബാങ്ക് നിക്ഷേപം സമർപ്പിച്ചിരിക്കുന്നു.',
       '',
+      `നിക്ഷേപ നമ്പർ: ${number}`,
+      `കളക്ഷൻ ഏജന്റ്: ${session.name}`,
+      `താലൂക്ക്: ${session.talukName || 'അസൈൻ ചെയ്ത താലൂക്ക്'}`,
+      `തുക: ${formatAmount(amount)} രൂപ`,
+      `കളക്ഷൻ എൻട്രികളുടെ എണ്ണം: ${entryCount}`,
+      `ബാങ്ക്: ${session.bank?.bank_name || 'അസൈൻ ചെയ്ത ബാങ്ക്'}`,
+      `ബാങ്ക് റഫറൻസ്: ${reference}`,
+      `സമർപ്പിച്ച സമയം: ${submittedForMessage}`,
+      '',
+      'നിക്ഷേപം പരിശോധിക്കാൻ:',
       `${window.location.origin}/admin/deposits`,
+      '',
+      'കാരുണ്യസ്പർശം',
     ].join('\n')
     setAdminNotice({ number, amount, reference, submitted, href: whatsappLink(ADMIN_WHATSAPP_NUMBER, message) })
   }
