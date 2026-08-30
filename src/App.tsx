@@ -104,7 +104,7 @@ function mapWorkspace(raw: Workspace) {
     collectorName: String(item.collector_name || 'Collection agent'),
   }))
   const deposits: DepositRecord[] = raw.deposits.map(item => ({
-    id: String(item.id), number: String(item.deposit_number), agent: String(item.agent_name), taluk: String(item.taluk_name),
+    id: String(item.id), number: String(item.deposit_number), agent: String(item.agent_name), agentPhone: String(item.agent_phone || ''), taluk: String(item.taluk_name),
     bankName: String(item.bank_name || 'Assigned bank'),
     bank: `${item.bank_name}${item.bank_last4 ? ` •••• ${item.bank_last4}` : ''}`,
     calculated: Number(item.calculated_total), declared: Number(item.declared_deposit_amount),
@@ -724,6 +724,40 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
   const filterCopy = filter === 'Submitted'
     ? { title: 'No deposits awaiting review', detail: 'An agent must submit a deposit batch before it can be approved or rejected.' }
     : { title: `No ${filter.toLowerCase()} deposits`, detail: `Deposits marked ${filter.toLowerCase()} will appear here.` }
+  const agentMessageFor = (deposit: DepositRecord) => {
+    const approved = deposit.status === 'Approved'
+    return [
+      'കാരുണ്യസ്പർശം',
+      '',
+      `നമസ്കാരം ${deposit.agent},`,
+      '',
+      approved
+        ? 'താങ്കൾ സമർപ്പിച്ച ബാങ്ക് നിക്ഷേപം അഡ്മിൻ അംഗീകരിച്ചിരിക്കുന്നു.'
+        : 'താങ്കൾ സമർപ്പിച്ച ബാങ്ക് നിക്ഷേപം അഡ്മിൻ നിരസിച്ചിരിക്കുന്നു.',
+      '',
+      `നിക്ഷേപ നമ്പർ: ${deposit.number}`,
+      `തുക: ${formatAmount(deposit.calculated)} രൂപ`,
+      `ബാങ്ക്: ${deposit.bankName || 'അസൈൻ ചെയ്ത ബാങ്ക്'}`,
+      `ബാങ്ക് റഫറൻസ്: ${deposit.reference || 'നൽകിയിട്ടില്ല'}`,
+      `സ്ഥിതി: ${approved ? 'അംഗീകരിച്ചു' : 'നിരസിച്ചു'}`,
+      ...(approved
+        ? ['', 'ഈ നിക്ഷേപത്തിലെ കളക്ഷനുകൾ സ്ഥിരീകരിച്ചിരിക്കുന്നു.']
+        : [
+            `നിരസിക്കാനുള്ള കാരണം: ${deposit.rejectionReason || 'നൽകിയിട്ടില്ല'}`,
+            '',
+            'ദയവായി കാരണം പരിശോധിച്ച് ആവശ്യമായ തിരുത്തലുകൾ നടത്തിയ ശേഷം കളക്ഷൻ എൻട്രികൾ പുതിയ നിക്ഷേപമായി വീണ്ടും സമർപ്പിക്കുക.',
+          ]),
+      '',
+      'കൂടുതൽ വിവരങ്ങൾ:',
+      `${window.location.origin}/agent/deposits`,
+      '',
+      'നന്ദി,',
+      'കാരുണ്യസ്പർശം',
+    ].join('\n')
+  }
+  const agentMessageHref = selected && selected.status !== 'Submitted'
+    ? whatsappLink(selected.agentPhone, agentMessageFor(selected))
+    : ''
   const selectFilter = (status: 'Submitted' | 'Approved' | 'Rejected') => {
     setFilter(status)
     setSelected(null)
@@ -735,11 +769,16 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
     setReviewing(true)
     try {
       await workspaceApi.reviewDeposit(selected.id, selected.version || 1, decision === 'Approved', reason)
-      const reviewedDeposit: DepositRecord = { ...selected, status: decision, version: (selected.version || 1) + 1 }
+      const reviewedDeposit: DepositRecord = {
+        ...selected,
+        status: decision,
+        rejectionReason: decision === 'Rejected' ? reason : selected.rejectionReason,
+        version: (selected.version || 1) + 1,
+      }
       await reload()
       setFilter(decision)
-      setSelected(decision === 'Approved' ? reviewedDeposit : null)
-      notify(decision === 'Approved' ? 'Deposit approved. Send WhatsApp messages from the member list.' : 'Deposit rejected and collections released.', decision === 'Rejected' ? 'danger' : 'success')
+      setSelected(reviewedDeposit)
+      notify(decision === 'Approved' ? 'Deposit approved. WhatsApp messages are ready for the agent and members.' : 'Deposit rejected. The agent WhatsApp message is ready.', decision === 'Rejected' ? 'danger' : 'success')
     } catch (error) {
       notify(error instanceof Error ? error.message : `Unable to ${decision.toLowerCase()} the deposit.`, 'danger')
     } finally {
@@ -781,6 +820,12 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
               : selectedCollections.map(collection => <div key={collection.id}><span>{collection.member}<small>{collection.label}</small></span><strong>{<Money value={collection.amount} />}</strong></div>))
               : <div><span>Multiple verified entries<small>Item breakdown retained in batch</small></span><strong>{<Money value={selected.calculated} />}</strong></div>}
           </div>
+          {selected.status !== 'Submitted' && <div className="agent-review-message">
+            <div><FaWhatsapp /><span><strong>Notify {selected.agent}</strong><small>{selected.status === 'Approved' ? 'Send the approval confirmation to the agent.' : 'Send the rejection reason and corrective action to the agent.'}</small></span></div>
+            {agentMessageHref
+              ? <a className="primary admin-whatsapp-action" href={agentMessageHref} target="_blank" rel="noreferrer"><FaWhatsapp /> WhatsApp agent</a>
+              : <span className="whatsapp-unavailable">Agent WhatsApp number unavailable</span>}
+          </div>}
           {selected.status === 'Submitted' && <div className="review-actions"><button className="danger-btn" disabled={!online || reviewing} onClick={() => review('Rejected')}><XCircle /> {reviewing ? 'Working...' : 'Reject'}</button><button className="primary" disabled={!online || reviewing || selected.calculated !== selected.declared} onClick={() => review('Approved')}><CheckCircle2 /> {reviewing ? 'Working...' : 'Approve deposit'}</button></div>}
         </> : <div className="empty-review"><FileCheck2 /><h3>{filteredDeposits.length ? `Select a ${filter.toLowerCase()} deposit` : filterCopy.title}</h3><p>{filteredDeposits.length ? (filter === 'Submitted' ? 'Review the calculated total, bank details, and collection entries before deciding.' : 'Select a deposit from the list to view its details.') : filterCopy.detail}</p></div>}
       </section>

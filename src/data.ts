@@ -59,6 +59,7 @@ export interface DepositRecord {
   id: string
   number: string
   agent: string
+  agentPhone: string
   taluk: string
   bank: string
   bankName: string

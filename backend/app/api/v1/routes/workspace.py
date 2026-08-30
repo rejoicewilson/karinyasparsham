@@ -158,7 +158,7 @@ async def collection_rows(db: AsyncSession, actor: CurrentActor, member_id=None)
 
 async def deposit_rows(db: AsyncSession, actor: CurrentActor) -> list[dict]:
     query = (
-        select(DepositBatch, Profile.full_name, Taluk.name)
+        select(DepositBatch, Profile.full_name, Profile.phone, Taluk.name)
         .join(Profile, Profile.id == DepositBatch.agent_profile_id)
         .join(Taluk, Taluk.id == DepositBatch.taluk_id)
         .order_by(DepositBatch.created_at.desc())
@@ -166,7 +166,7 @@ async def deposit_rows(db: AsyncSession, actor: CurrentActor) -> list[dict]:
     if actor.role == UserRole.AGENT:
         query = query.where(DepositBatch.agent_profile_id == actor.profile_id)
     batches = (await db.execute(query.limit(150))).all()
-    batch_ids = [batch.id for batch, _, _ in batches]
+    batch_ids = [batch.id for batch, _, _, _ in batches]
     items = []
     if batch_ids:
         items = (
@@ -185,6 +185,7 @@ async def deposit_rows(db: AsyncSession, actor: CurrentActor) -> list[dict]:
             "id": batch.id,
             "deposit_number": batch.deposit_number,
             "agent_name": agent_name,
+            "agent_phone": agent_phone,
             "taluk_name": taluk_name,
             "bank_name": batch.bank_snapshot.get("bank_name", "Assigned bank"),
             "bank_last4": batch.bank_snapshot.get("account_number_last4", ""),
@@ -197,7 +198,7 @@ async def deposit_rows(db: AsyncSession, actor: CurrentActor) -> list[dict]:
             "rejection_reason": batch.rejection_reason,
             "version": batch.version,
         }
-        for batch, agent_name, taluk_name in batches
+        for batch, agent_name, agent_phone, taluk_name in batches
     ]
 
 
