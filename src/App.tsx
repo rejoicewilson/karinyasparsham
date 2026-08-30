@@ -5,7 +5,7 @@ import {
   AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Banknote, Bell, BookOpen, CalendarDays,
   Check, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Clock3, Download,
   Eye, EyeOff, FileCheck2, HeartHandshake, Home, IndianRupee, Landmark,
-  ListChecks, LockKeyhole, LogOut, Menu, MessageSquareText, MoreVertical, Pencil, Plus, Receipt,
+  ListChecks, LockKeyhole, LogOut, Menu, MessageSquareText, MoreVertical, Paperclip, Pencil, Plus, Receipt,
   Search, ShieldCheck, Smartphone, UserRound, Users, WalletCards, WifiOff, X,
   XCircle, type LucideIcon
 } from 'lucide-react'
@@ -1117,7 +1117,7 @@ function DepositModal({ collections, onClose, onSubmit }: { collections: Collect
 }
 
 function DepositAdminNotice({ notice, onClose }: { notice: { number: string; amount: number; reference: string; submitted: string; href: string }; onClose: () => void }) {
-  return <Modal title="Deposit submitted" onClose={onClose}><div className="modal-form"><section className="bank-destination"><FaWhatsapp /><div><span>Admin WhatsApp</span><strong>+91 94476 45196</strong><small>Deposit review notification</small></div></section><div className="profile-data"><span>Deposit</span><strong>{notice.number}</strong><span>Amount</span><strong>{<Money value={notice.amount} />}</strong><span>Reference</span><strong>{notice.reference}</strong><span>Submitted</span><strong>{notice.submitted}</strong></div><div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Close</button><a className="primary admin-whatsapp-action" href={notice.href} target="_blank" rel="noreferrer"><FaWhatsapp /> WhatsApp admin</a></div></div></Modal>
+  return <Modal title="Deposit submitted" onClose={onClose}><div className="modal-form"><section className="bank-destination"><FaWhatsapp /><div><span>Admin WhatsApp</span><strong>+91 94476 45196</strong><small>Deposit review notification</small></div></section><div className="profile-data"><span>Deposit</span><strong>{notice.number}</strong><span>Amount</span><strong>{<Money value={notice.amount} />}</strong><span>Reference</span><strong>{notice.reference}</strong><span>Submitted</span><strong>{notice.submitted}</strong></div><div className="audit-note"><Paperclip /> WhatsApp തുറന്ന ശേഷം സന്ദേശം അയയ്ക്കുന്നതിന് മുമ്പ് ബാങ്ക് നിക്ഷേപ രസീത് അറ്റാച്ച് ചെയ്യുക.</div><div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Close</button><a className="primary admin-whatsapp-action" href={notice.href} target="_blank" rel="noreferrer"><FaWhatsapp /> WhatsApp admin</a></div></div></Modal>
 }
 
 function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
