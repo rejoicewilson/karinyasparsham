@@ -17,8 +17,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['logo.png'],
       manifest: {
-        name: 'Karunya Sparsham',
-        short_name: 'Karunya',
+        name: 'കാരുണ്യസ്പർശം',
+        short_name: 'കാരുണ്യസ്പർശം',
+        lang: 'ml',
         description: 'Helping fund collection and verification',
         theme_color: '#166534',
         background_color: '#f5f7f5',
