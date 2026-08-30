@@ -18,7 +18,7 @@ export default defineConfig({
       includeAssets: ['logo.png'],
       manifest: {
         name: 'കാരുണ്യസ്പർശം',
-        short_name: 'കാരുണ്യസ്പർശം',
+        short_name: 'കാരുണ്യ',
         lang: 'ml',
         description: 'Helping fund collection and verification',
         theme_color: '#166534',
