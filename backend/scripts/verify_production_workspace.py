@@ -1,5 +1,6 @@
-"""Read-only verification that the active production workspace is empty and Admin-ready."""
+"""Read-only verification of active production workspace record counts."""
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -16,6 +17,9 @@ from app.core.config import get_settings  # noqa: E402
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--expected-taluks", type=int, default=0)
+    args = parser.parse_args()
     configured = get_settings().DATABASE_URL.replace(
         "postgresql+asyncpg://", "postgresql://", 1
     )
@@ -70,7 +74,7 @@ def main() -> None:
     expected = {
         "active_admins": 1,
         "active_non_admins": 0,
-        "active_taluks": 0,
+        "active_taluks": args.expected_taluks,
         "active_assignments": 0,
         "active_banks": 0,
         "visible_members": 0,
@@ -82,7 +86,7 @@ def main() -> None:
     print(json.dumps(result, indent=2))
     if result != expected:
         raise SystemExit("Production workspace verification failed.")
-    print("Production workspace is empty and the sole Admin is active.")
+    print("Production workspace counts match and the sole Admin is active.")
 
 
 if __name__ == "__main__":
