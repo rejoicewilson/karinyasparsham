@@ -52,6 +52,7 @@ async def create_collection(
 
 
 @router.get("/deposits")
+@router.get("/handovers")
 async def list_deposits(
     request: Request,
     actor: CurrentActor = Depends(agent_only),
@@ -69,6 +70,7 @@ async def list_deposits(
 
 
 @router.post("/deposits", status_code=status.HTTP_201_CREATED)
+@router.post("/handovers", status_code=status.HTTP_201_CREATED)
 async def create_deposit_batch(
     payload: DepositCreate,
     request: Request,
@@ -80,6 +82,7 @@ async def create_deposit_batch(
 
 
 @router.post("/deposits/{batch_id}/submit")
+@router.post("/handovers/{batch_id}/submit")
 async def submit_deposit_batch(
     batch_id: uuid.UUID,
     payload: DepositSubmit,

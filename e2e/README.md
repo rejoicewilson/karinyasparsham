@@ -4,8 +4,8 @@ This suite exercises the real browser, API, Supabase Auth, database, and private
 
 1. Provision a unique taluk, agent, bank, deceased member, and contributing member.
 2. Publish a death case as the administrator.
-3. Record a collection and submit its deposit as the assigned agent.
-4. Approve the deposit as the administrator.
+3. Record a collection and submit its handover as the assigned agent.
+4. Confirm receipt of the handover as the administrator.
 5. Sign in as the member and verify the required, collected, and verified ledger amounts.
 6. Deactivate the generated member, agent, bank assignment, and taluk configuration.
 

@@ -79,14 +79,14 @@ export const workspaceApi = {
   recordCollection: (payload: Record<string, unknown>) => apiRequest('/agent/collections', {
     method: 'POST', body: JSON.stringify(payload)
   }),
-  createDeposit: (payload: Record<string, unknown>) => apiRequest<Record<string, any>>('/agent/deposits', {
+  createHandover: (payload: Record<string, unknown>) => apiRequest<Record<string, any>>('/agent/handovers', {
     method: 'POST', body: JSON.stringify(payload)
   }),
-  submitDeposit: (id: string, version: number) => apiRequest<Record<string, any>>(`/agent/deposits/${id}/submit`, {
+  submitHandover: (id: string, version: number) => apiRequest<Record<string, any>>(`/agent/handovers/${id}/submit`, {
     method: 'POST', body: JSON.stringify({ expected_version: version })
   }),
-  reviewDeposit: (id: string, version: number, approve: boolean, reason?: string) =>
-    apiRequest(`/admin/deposits/${id}/${approve ? 'approve' : 'reject'}`, {
+  reviewHandover: (id: string, version: number, approve: boolean, reason?: string) =>
+    apiRequest(`/admin/handovers/${id}/${approve ? 'approve' : 'reject'}`, {
       method: 'POST', body: JSON.stringify(approve ? { expected_version: version } : { expected_version: version, reason })
     }),
   uploadCasePhoto: async (file: File) => {

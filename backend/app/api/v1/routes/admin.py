@@ -359,11 +359,8 @@ async def update_member(
     active_assignment = await db.scalar(select(AgentTalukAssignment.id).where(
         AgentTalukAssignment.taluk_id == payload.taluk_id, AgentTalukAssignment.ends_at.is_(None)
     ))
-    active_bank = await db.scalar(select(BankAccount.id).where(
-        BankAccount.taluk_id == payload.taluk_id, BankAccount.ends_at.is_(None)
-    ))
-    if not taluk_ready or not active_assignment or not active_bank:
-        raise AppError("VERSION_CONFLICT", "The selected taluk must have an active agent and bank account.", 409)
+    if not taluk_ready or not active_assignment:
+        raise AppError("VERSION_CONFLICT", "The selected taluk must have an active agent.", 409)
     duplicate = await db.scalar(select(Member.id).where(
         Member.id != member_id, Member.member_code == payload.member_code
     ))
@@ -620,6 +617,7 @@ async def update_death_case_whatsapp_status(
 
 
 @router.get("/deposits")
+@router.get("/handovers")
 async def list_deposits(
     request: Request,
     review_status: DepositStatus | None = None,
@@ -639,6 +637,7 @@ async def list_deposits(
 
 
 @router.post("/deposits/{batch_id}/approve")
+@router.post("/handovers/{batch_id}/approve")
 async def approve_deposit(
     batch_id: uuid.UUID,
     payload: DepositApprove,
@@ -653,6 +652,7 @@ async def approve_deposit(
 
 
 @router.post("/deposits/{batch_id}/reject")
+@router.post("/handovers/{batch_id}/reject")
 async def reject_deposit(
     batch_id: uuid.UUID,
     payload: DepositReject,

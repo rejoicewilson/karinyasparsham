@@ -114,7 +114,7 @@ function mapWorkspace(raw: Workspace) {
     bank: `${item.bank_name}${item.bank_last4 ? ` •••• ${item.bank_last4}` : ''}`,
     calculated: Number(item.calculated_total), declared: Number(item.declared_deposit_amount),
     submitted: dateTimeText(String(item.submitted_at || item.created_at)), status: titleCase(String(item.status)) as DepositRecord['status'],
-    collectionIds: (item.collection_ids || []).map(String), reference: String(item.bank_reference || ''),
+    collectionIds: (item.collection_ids || []).map(String), reference: String(item.bank_reference || ''), note: String(item.handover_note || ''),
     rejectionReason: item.rejection_reason ? String(item.rejection_reason) : undefined, version: Number(item.version)
   }))
   const notifications: Notice[] = raw.notifications.map(item => ({
@@ -134,7 +134,7 @@ function mapWorkspace(raw: Workspace) {
 const pageTitles: Record<string, string> = {
   dashboard: 'Overview', cases: 'Death cases', dues: 'Outstanding', payments: 'Payment history',
   permanent: 'Account', notifications: 'Notifications', account: 'Account',
-  collect: 'Collections', deposits: 'Deposits', members: 'Members', reports: 'Reports',
+  collect: 'Collections', handovers: 'Handovers', deposits: 'Handovers', members: 'Members', reports: 'Reports',
   taluks: 'Organization'
 }
 
@@ -291,12 +291,12 @@ const navByRole: Record<Role, NavItem[]> = {
   ],
   agent: [
     { key: 'dashboard', label: 'Home', icon: Home }, { key: 'collect', label: 'Collections', icon: IndianRupee },
-    { key: 'deposits', label: 'Deposits', icon: Landmark }, { key: 'members', label: 'Members', icon: Users },
+    { key: 'handovers', label: 'Handovers', icon: WalletCards }, { key: 'members', label: 'Members', icon: Users },
     { key: 'account', label: 'Account', icon: UserRound }
   ],
   admin: [
     { key: 'dashboard', label: 'Overview', icon: Home }, { key: 'cases', label: 'Death cases', icon: HeartHandshake },
-    { key: 'deposits', label: 'Deposit review', icon: FileCheck2 }, { key: 'members', label: 'Members', icon: Users },
+    { key: 'handovers', label: 'Handover review', icon: FileCheck2 }, { key: 'members', label: 'Members', icon: Users },
     { key: 'taluks', label: 'Organization', icon: Landmark }, { key: 'reports', label: 'Reports', icon: ListChecks }
   ]
 }
@@ -353,7 +353,7 @@ function RoleRouter(props: {
   }
   if (props.role === 'agent') {
     if (section === 'collect') return <AgentCollections online={props.online} collections={props.collections} setCollections={props.setCollections} notify={props.notify} reload={props.reload} />
-    if (section === 'deposits') return <AgentDeposits online={props.online} collections={props.collections} setCollections={props.setCollections} deposits={props.deposits} setDeposits={props.setDeposits} notify={props.notify} reload={props.reload} session={props.session} />
+    if (section === 'handovers' || section === 'deposits') return <AgentDeposits online={props.online} collections={props.collections} setCollections={props.setCollections} deposits={props.deposits} setDeposits={props.setDeposits} notify={props.notify} reload={props.reload} session={props.session} />
     if (section === 'members' && detail) return <MemberDetail id={detail} collections={props.collections} />
     if (section === 'members') return <MembersPage role="agent" />
     if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
@@ -362,7 +362,7 @@ function RoleRouter(props: {
   }
   if (section === 'cases' && detail) return <CaseDetail caseId={detail} admin />
   if (section === 'cases') return <AdminCases online={props.online} notify={props.notify} reload={props.reload} />
-  if (section === 'deposits') return <AdminDeposits deposits={props.deposits} setDeposits={props.setDeposits} collections={props.collections} setCollections={props.setCollections} online={props.online} notify={props.notify} reload={props.reload} />
+  if (section === 'handovers' || section === 'deposits') return <AdminDeposits deposits={props.deposits} setDeposits={props.setDeposits} collections={props.collections} setCollections={props.setCollections} online={props.online} notify={props.notify} reload={props.reload} />
   if (section === 'members') return <MembersPage role="admin" reload={props.reload} notify={props.notify} />
   if (section === 'taluks') return <TaluksPage reload={props.reload} notify={props.notify} />
   if (section === 'reports') return <ReportsPage />
@@ -405,13 +405,13 @@ function AgentDashboard({ collections, deposits }: { collections: CollectionReco
     <section className="metric-grid agent-metrics">
       <Metric icon={Users} label="Assigned members" value={String(members.length)} />
       <Metric icon={IndianRupee} label="Total pending" value={<Money value={totalOutstanding} />} tone="red" />
-      <Metric icon={WalletCards} label="Not deposited" value={<Money value={unbatched} />} tone="amber" />
-      <Metric icon={Clock3} label="Awaiting review" value={String(deposits.filter(d => d.status === 'Submitted').length)} tone="blue" />
+      <Metric icon={WalletCards} label="Awaiting handover" value={<Money value={unbatched} />} tone="amber" />
+      <Metric icon={Clock3} label="Awaiting receipt" value={String(deposits.filter(d => d.status === 'Submitted').length)} tone="blue" />
     </section>
     <button className="primary action-wide" onClick={() => navigate('/agent/collect')}><IndianRupee /> Record payment <ArrowRight /></button>
     <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
     <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agent key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
-    <SectionHeading title="Deposit status" action="All deposits" onAction={() => navigate('/agent/deposits')} />
+    <SectionHeading title="Handover status" action="All handovers" onAction={() => navigate('/agent/handovers')} />
     <div className="list-surface">{deposits.slice(0, 2).map(d => <DepositRow key={d.id} deposit={d} />)}</div>
   </div>
 }
@@ -433,7 +433,7 @@ function AdminDashboard({ deposits }: { deposits: DepositRecord[] }) {
       <Metric icon={IndianRupee} label="Outstanding dues" value={<Money value={members.reduce((sum, item) => sum + item.pending, 0)} />} detail={`${taluks.length} taluks`} tone="blue" />
     </section>
     <div className="admin-columns">
-      <section><SectionHeading title="Deposit review queue" action="Review all" onAction={() => navigate('/admin/deposits')} /><div className="list-surface">{deposits.filter(d => d.status === 'Submitted').map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => navigate('/admin/deposits')} />)}</div></section>
+      <section><SectionHeading title="Handover review queue" action="Review all" onAction={() => navigate('/admin/handovers')} /><div className="list-surface">{deposits.filter(d => d.status === 'Submitted').map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => navigate('/admin/handovers')} />)}</div></section>
       <section><SectionHeading title="Taluk collection progress" action="View report" onAction={() => navigate('/admin/reports')} />{taluks.length ? <div className="taluk-progress">{taluks.map(item => { const total = talukTotals.get(String(item.id)); const percent = total?.required ? total.collected / total.required * 100 : 0; return <div key={String(item.id)}><div><strong>{String(item.name)}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No taluks have been configured.</p>}</section>
     </div>
     <SectionHeading title="Recent death cases" action="View register" onAction={() => navigate('/admin/cases')} />
@@ -633,53 +633,52 @@ function AgentCollections({ online, collections, setCollections: _setCollections
     })
     await reload(); setModal(false); notify(`${formatMoney(amount)} collection recorded for ${member.name}.`)
   }
-  return <div className="page-stack"><section className="collection-banner"><div><span>Collected, not deposited</span><strong>{<Money value={collections.filter(c => c.status === 'Recorded').reduce((s, c) => s + c.amount, 0)} />}</strong></div><button className="secondary" onClick={() => location.assign('/agent/deposits')}>Prepare deposit <ArrowRight /></button></section><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search outstanding payments" /><button className="primary" disabled={!online} onClick={() => { setSelectedMemberId(undefined); setModal(true) }}><IndianRupee /> Record payment</button></div><div className="filter-row">{(['Pending', 'Partial'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} pending={outstandingFor(m)} action={() => { setSelectedMemberId(m.id); setModal(true) }} actionLabel="Record payment" />)}</div> : <div className="empty-review"><BadgeCheck /><h3>No outstanding payments found</h3><p>Try another search or check the other payment status.</p></div>}{modal && <CollectionModal initialMemberId={selectedMemberId} onClose={() => { setModal(false); setSelectedMemberId(undefined) }} onRecord={record} />}</div>
+  return <div className="page-stack"><section className="collection-banner"><div><span>Collected, not handed over</span><strong>{<Money value={collections.filter(c => c.status === 'Recorded').reduce((s, c) => s + c.amount, 0)} />}</strong></div><button className="secondary" onClick={() => location.assign('/agent/handovers')}>Prepare handover <ArrowRight /></button></section><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search outstanding payments" /><button className="primary" disabled={!online} onClick={() => { setSelectedMemberId(undefined); setModal(true) }}><IndianRupee /> Record payment</button></div><div className="filter-row">{(['Pending', 'Partial'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} pending={outstandingFor(m)} action={() => { setSelectedMemberId(m.id); setModal(true) }} actionLabel="Record payment" />)}</div> : <div className="empty-review"><BadgeCheck /><h3>No outstanding payments found</h3><p>Try another search or check the other payment status.</p></div>}{modal && <CollectionModal initialMemberId={selectedMemberId} onClose={() => { setModal(false); setSelectedMemberId(undefined) }} onRecord={record} />}</div>
 }
 
 function AgentDeposits({ online, collections, setCollections: _setCollections, deposits, setDeposits: _setDeposits, notify, reload, session }: { online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void>; session: Session }) {
   const [modal, setModal] = useState(false)
   const [filter, setFilter] = useState<'All' | DepositRecord['status']>('All')
-  const [adminNotice, setAdminNotice] = useState<{ number: string; amount: number; reference: string; submitted: string; href: string } | null>(null)
+  const [adminNotice, setAdminNotice] = useState<{ number: string; amount: number; note: string; submitted: string; href: string } | null>(null)
   const own = deposits.filter(item => item.agent === session.name && (filter === 'All' || item.status === filter))
-  const bankLabel = session.bank ? `${session.bank.bank_name} •••• ${session.bank.last4}` : 'No bank account configured'
   const prepareAdminNotice = (batch: Record<string, any>, entryCount: number) => {
     const number = String(batch.deposit_number || batch.number || '')
     const amount = Number(batch.calculated_total ?? batch.calculated ?? 0)
-    const reference = String(batch.bank_reference || batch.reference || 'നൽകിയിട്ടില്ല')
+    const note = String(batch.agent_message || batch.handover_note || 'നൽകിയിട്ടില്ല')
     const submittedAt = String(batch.submitted_at || new Date().toISOString())
     const submitted = dateTimeText(submittedAt)
     const submittedForMessage = new Intl.DateTimeFormat('ml-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(submittedAt))
     const message = [
       'കാരുണ്യസ്പർശം',
       '',
-      'അഡ്മിൻ പരിശോധനയ്ക്കായി ഒരു പുതിയ ബാങ്ക് നിക്ഷേപം സമർപ്പിച്ചിരിക്കുന്നു.',
+      'അഡ്മിൻ പരിശോധനയ്ക്കായി ഒരു പുതിയ കളക്ഷൻ കൈമാറ്റം സമർപ്പിച്ചിരിക്കുന്നു.',
       '',
-      `നിക്ഷേപ നമ്പർ: ${number}`,
+      `കൈമാറ്റ നമ്പർ: ${number}`,
       `കളക്ഷൻ ഏജന്റ്: ${session.name}`,
       `താലൂക്ക്: ${session.talukName || 'അസൈൻ ചെയ്ത താലൂക്ക്'}`,
-      `തുക: ${formatAmount(amount)} രൂപ`,
+      `കൈമാറിയ തുക: ${formatAmount(amount)} രൂപ`,
       `കളക്ഷൻ എൻട്രികളുടെ എണ്ണം: ${entryCount}`,
-      `ബാങ്ക്: ${session.bank?.bank_name || 'അസൈൻ ചെയ്ത ബാങ്ക്'}`,
-      `ബാങ്ക് റഫറൻസ്: ${reference}`,
+      `കുറിപ്പ്: ${note}`,
       `സമർപ്പിച്ച സമയം: ${submittedForMessage}`,
       '',
-      'നിക്ഷേപം പരിശോധിക്കാൻ:',
-      `${window.location.origin}/admin/deposits`,
+      'കൈമാറ്റം പരിശോധിക്കാൻ:',
+      `${window.location.origin}/admin/handovers`,
       '',
       'കാരുണ്യസ്പർശം',
     ].join('\n')
-    setAdminNotice({ number, amount, reference, submitted, href: whatsappLink(ADMIN_WHATSAPP_NUMBER, message) })
+    setAdminNotice({ number, amount, note, submitted, href: whatsappLink(ADMIN_WHATSAPP_NUMBER, message) })
   }
-  const create = async (ids: string[], amount: number, reference: string) => {
-    const batch = await workspaceApi.createDeposit({ collection_ids: ids, declared_deposit_amount: amount, deposited_at: new Date().toISOString(), bank_reference: reference })
-    const submitted = await workspaceApi.submitDeposit(String(batch.id), Number(batch.version || 1))
-    await reload(); setModal(false); prepareAdminNotice(submitted, ids.length); notify('Deposit submitted for admin verification.')
+  const create = async (ids: string[], amount: number, note: string) => {
+    const batch = await workspaceApi.createHandover({ collection_ids: ids, declared_deposit_amount: amount, deposited_at: new Date().toISOString(), agent_message: note || null })
+    const submitted = await workspaceApi.submitHandover(String(batch.id), Number(batch.version || 1))
+    await reload(); setModal(false); prepareAdminNotice(submitted, ids.length); notify('Handover submitted for administrator confirmation.')
   }
   const submitDraft = async (deposit: DepositRecord) => {
-    try { const submitted = await workspaceApi.submitDeposit(deposit.id, deposit.version || 1); await reload(); prepareAdminNotice(submitted, deposit.collectionIds.length); notify('Draft deposit submitted for admin verification.') }
-    catch (cause) { notify(cause instanceof Error ? cause.message : 'Draft deposit could not be submitted.') }
+    try { const submitted = await workspaceApi.submitHandover(deposit.id, deposit.version || 1); await reload(); prepareAdminNotice(submitted, deposit.collectionIds.length); notify('Draft handover submitted for administrator confirmation.') }
+    catch (cause) { notify(cause instanceof Error ? cause.message : 'Draft handover could not be submitted.') }
   }
-  return <div className="page-stack"><div className="toolbar"><div><h2 className="mobile-section-title">Deposit batches</h2><p className="subtle">{bankLabel}</p></div><button className="primary" disabled={!online || !session.bank || !collections.some(c => c.status === 'Recorded')} onClick={() => setModal(true)}><Plus /> New deposit</button></div><div className="filter-row">{(['All', 'Draft', 'Submitted', 'Approved', 'Rejected'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{own.length ? <div className="list-surface deposits-full">{own.map(d => <DepositRow key={d.id} deposit={d} action={d.status === 'Draft' && online ? () => submitDraft(d) : undefined} actionLabel="Submit" />)}</div> : <div className="empty-review"><Landmark /><h3>No deposits found</h3><p>Create a batch from recorded collections or choose another status.</p></div>}{modal && <DepositModal collections={collections.filter(c => c.status === 'Recorded')} onClose={() => setModal(false)} onSubmit={create} />}{adminNotice && <DepositAdminNotice notice={adminNotice} onClose={() => setAdminNotice(null)} />}</div>
+  const statusLabel = (status: 'All' | DepositRecord['status']) => status === 'Submitted' ? 'Awaiting receipt' : status === 'Approved' ? 'Received' : status
+  return <div className="page-stack"><div className="toolbar"><div><h2 className="mobile-section-title">Collection handovers</h2><p className="subtle">Submit collected amounts to the administrator.</p></div><button className="primary" disabled={!online || !collections.some(c => c.status === 'Recorded')} onClick={() => setModal(true)}><Plus /> New handover</button></div><div className="filter-row">{(['All', 'Draft', 'Submitted', 'Approved', 'Rejected'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{statusLabel(status)}</button>)}</div>{own.length ? <div className="list-surface deposits-full">{own.map(d => <DepositRow key={d.id} deposit={d} action={d.status === 'Draft' && online ? () => submitDraft(d) : undefined} actionLabel="Submit" />)}</div> : <div className="empty-review"><WalletCards /><h3>No handovers found</h3><p>Create a handover from recorded collections or choose another status.</p></div>}{modal && <DepositModal collections={collections.filter(c => c.status === 'Recorded')} onClose={() => setModal(false)} onSubmit={create} />}{adminNotice && <DepositAdminNotice notice={adminNotice} onClose={() => setAdminNotice(null)} />}</div>
 }
 
 function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCollections: _setCollections, online, notify, reload }: { deposits: DepositRecord[]; setDeposits: (d: DepositRecord[]) => void; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; online: boolean; notify: (message: string, tone?: Toast['tone']) => void; reload: () => Promise<void> }) {
@@ -717,18 +716,16 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
     '',
     `നമസ്കാരം ${member.name},`,
     '',
-    `താങ്കളിൽ നിന്ന് സ്വീകരിച്ച ${formatAmount(member.amount)} രൂപയുടെ പേയ്‌മെന്റ് ബാങ്കിൽ നിക്ഷേപിച്ച് സ്ഥിരീകരിച്ചിരിക്കുന്നു.`,
+    `താങ്കളിൽ നിന്ന് സ്വീകരിച്ച ${formatAmount(member.amount)} രൂപയുടെ പേയ്‌മെന്റ് അഡ്മിൻ സ്വീകരിച്ച് സ്ഥിരീകരിച്ചിരിക്കുന്നു.`,
     '',
-    `ബാങ്ക്: ${selected?.bankName || 'അസൈൻ ചെയ്ത ബാങ്ക്'}`,
-    `നിക്ഷേപ നമ്പർ: ${selected?.number || ''}`,
-    `ബാങ്ക് റഫറൻസ്: ${selected?.reference || 'നൽകിയിട്ടില്ല'}`,
+    `കൈമാറ്റ നമ്പർ: ${selected?.number || ''}`,
     '',
     'നന്ദി,',
     'കാരുണ്യസ്പർശം',
   ].join('\n')
   const filterCopy = filter === 'Submitted'
-    ? { title: 'No deposits awaiting review', detail: 'An agent must submit a deposit batch before it can be approved or rejected.' }
-    : { title: `No ${filter.toLowerCase()} deposits`, detail: `Deposits marked ${filter.toLowerCase()} will appear here.` }
+    ? { title: 'No handovers awaiting receipt', detail: 'An agent must submit a collection handover before it can be confirmed or rejected.' }
+    : { title: `No ${filter === 'Approved' ? 'received' : filter.toLowerCase()} handovers`, detail: `Handovers marked ${filter === 'Approved' ? 'received' : filter.toLowerCase()} will appear here.` }
   const agentMessageFor = (deposit: DepositRecord) => {
     const approved = deposit.status === 'Approved'
     return [
@@ -737,24 +734,22 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
       `നമസ്കാരം ${deposit.agent},`,
       '',
       approved
-        ? 'താങ്കൾ സമർപ്പിച്ച ബാങ്ക് നിക്ഷേപം അഡ്മിൻ അംഗീകരിച്ചിരിക്കുന്നു.'
-        : 'താങ്കൾ സമർപ്പിച്ച ബാങ്ക് നിക്ഷേപം അഡ്മിൻ നിരസിച്ചിരിക്കുന്നു.',
+        ? 'താങ്കൾ സമർപ്പിച്ച കളക്ഷൻ കൈമാറ്റം അഡ്മിൻ സ്വീകരിച്ച് സ്ഥിരീകരിച്ചിരിക്കുന്നു.'
+        : 'താങ്കൾ സമർപ്പിച്ച കളക്ഷൻ കൈമാറ്റം അഡ്മിൻ നിരസിച്ചിരിക്കുന്നു.',
       '',
-      `നിക്ഷേപ നമ്പർ: ${deposit.number}`,
+      `കൈമാറ്റ നമ്പർ: ${deposit.number}`,
       `തുക: ${formatAmount(deposit.calculated)} രൂപ`,
-      `ബാങ്ക്: ${deposit.bankName || 'അസൈൻ ചെയ്ത ബാങ്ക്'}`,
-      `ബാങ്ക് റഫറൻസ്: ${deposit.reference || 'നൽകിയിട്ടില്ല'}`,
-      `സ്ഥിതി: ${approved ? 'അംഗീകരിച്ചു' : 'നിരസിച്ചു'}`,
+      `സ്ഥിതി: ${approved ? 'സ്വീകരിച്ച് സ്ഥിരീകരിച്ചു' : 'നിരസിച്ചു'}`,
       ...(approved
-        ? ['', 'ഈ നിക്ഷേപത്തിലെ കളക്ഷനുകൾ സ്ഥിരീകരിച്ചിരിക്കുന്നു.']
+        ? ['', 'ഈ കൈമാറ്റത്തിലെ കളക്ഷനുകൾ സ്ഥിരീകരിച്ചിരിക്കുന്നു.']
         : [
             `നിരസിക്കാനുള്ള കാരണം: ${deposit.rejectionReason || 'നൽകിയിട്ടില്ല'}`,
             '',
-            'ദയവായി കാരണം പരിശോധിച്ച് ആവശ്യമായ തിരുത്തലുകൾ നടത്തിയ ശേഷം കളക്ഷൻ എൻട്രികൾ പുതിയ നിക്ഷേപമായി വീണ്ടും സമർപ്പിക്കുക.',
+            'ദയവായി കാരണം പരിശോധിച്ച് ആവശ്യമായ തിരുത്തലുകൾ നടത്തിയ ശേഷം കളക്ഷൻ എൻട്രികൾ പുതിയ കൈമാറ്റമായി വീണ്ടും സമർപ്പിക്കുക.',
           ]),
       '',
       'കൂടുതൽ വിവരങ്ങൾ:',
-      `${window.location.origin}/agent/deposits`,
+      `${window.location.origin}/agent/handovers`,
       '',
       'നന്ദി,',
       'കാരുണ്യസ്പർശം',
@@ -773,7 +768,7 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
     if (decision === 'Rejected' && (!reason || reason.length < 3)) return
     setReviewing(true)
     try {
-      await workspaceApi.reviewDeposit(selected.id, selected.version || 1, decision === 'Approved', reason)
+      await workspaceApi.reviewHandover(selected.id, selected.version || 1, decision === 'Approved', reason)
       const reviewedDeposit: DepositRecord = {
         ...selected,
         status: decision,
@@ -783,9 +778,9 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
       await reload()
       setFilter(decision)
       setSelected(reviewedDeposit)
-      notify(decision === 'Approved' ? 'Deposit approved. WhatsApp messages are ready for the agent and members.' : 'Deposit rejected. The agent WhatsApp message is ready.', decision === 'Rejected' ? 'danger' : 'success')
+      notify(decision === 'Approved' ? 'Handover received. WhatsApp messages are ready for the agent and members.' : 'Handover rejected. The agent WhatsApp message is ready.', decision === 'Rejected' ? 'danger' : 'success')
     } catch (error) {
-      notify(error instanceof Error ? error.message : `Unable to ${decision.toLowerCase()} the deposit.`, 'danger')
+      notify(error instanceof Error ? error.message : `Unable to ${decision.toLowerCase()} the handover.`, 'danger')
     } finally {
       setReviewing(false)
     }
@@ -793,7 +788,7 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
   return <div className="page-stack">
     <div className="filter-row">
       <button className={`chip ${filter === 'Submitted' ? 'active' : ''}`} onClick={() => selectFilter('Submitted')}>Pending ({deposits.filter(d => d.status === 'Submitted').length})</button>
-      <button className={`chip ${filter === 'Approved' ? 'active' : ''}`} onClick={() => selectFilter('Approved')}>Approved ({deposits.filter(d => d.status === 'Approved').length})</button>
+      <button className={`chip ${filter === 'Approved' ? 'active' : ''}`} onClick={() => selectFilter('Approved')}>Received ({deposits.filter(d => d.status === 'Approved').length})</button>
       <button className={`chip ${filter === 'Rejected' ? 'active' : ''}`} onClick={() => selectFilter('Rejected')}>Rejected ({deposits.filter(d => d.status === 'Rejected').length})</button>
     </div>
     <div className="review-layout">
@@ -804,9 +799,9 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
       </div>
       <section className="review-detail">
         {selected ? <>
-          <div className="review-head"><div><span className="case-number">{selected.number}</span><h2>{selected.agent}</h2><p>{selected.taluk} · {selected.submitted}</p></div><Status value={selected.status} /></div>
-          <div className="amount-match"><div><span>Calculated total</span><strong>{<Money value={selected.calculated} />}</strong></div><div><span>Declared deposit</span><strong>{<Money value={selected.declared} />}</strong></div><p className={selected.calculated === selected.declared ? 'match' : 'mismatch'}>{selected.calculated === selected.declared ? <CheckCircle2 /> : <AlertCircle />}{selected.calculated === selected.declared ? 'Amounts match exactly' : 'Approval blocked: total mismatch'}</p></div>
-          <dl className="review-data"><div><dt>Destination bank</dt><dd>{selected.bank}</dd></div><div><dt>Bank reference</dt><dd>{selected.reference}</dd></div><div><dt>Receipt</dt><dd>Not provided</dd></div></dl>
+          <div className="review-head"><div><span className="case-number">{selected.number}</span><h2>{selected.agent}</h2><p>{selected.taluk} · {selected.submitted}</p></div><HandoverStatus value={selected.status} /></div>
+          <div className="amount-match"><div><span>Collection total</span><strong>{<Money value={selected.calculated} />}</strong></div><div><span>Amount handed over</span><strong>{<Money value={selected.declared} />}</strong></div><p className={selected.calculated === selected.declared ? 'match' : 'mismatch'}>{selected.calculated === selected.declared ? <CheckCircle2 /> : <AlertCircle />}{selected.calculated === selected.declared ? 'Amounts match exactly' : 'Confirmation blocked: total mismatch'}</p></div>
+          <dl className="review-data"><div><dt>Agent</dt><dd>{selected.agent}</dd></div><div><dt>Taluk</dt><dd>{selected.taluk}</dd></div><div><dt>Handover note</dt><dd>{selected.note || 'Not provided'}</dd></div></dl>
           <SectionHeading title="Collection entries" />
           <div className="selected-items">
             {selected.collectionIds.length ? (selected.status === 'Approved'
@@ -826,13 +821,13 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
               : <div><span>Multiple verified entries<small>Item breakdown retained in batch</small></span><strong>{<Money value={selected.calculated} />}</strong></div>}
           </div>
           {selected.status !== 'Submitted' && <div className="agent-review-message">
-            <div><FaWhatsapp /><span><strong>Notify {selected.agent}</strong><small>{selected.status === 'Approved' ? 'Send the approval confirmation to the agent.' : 'Send the rejection reason and corrective action to the agent.'}</small></span></div>
+            <div><FaWhatsapp /><span><strong>Notify {selected.agent}</strong><small>{selected.status === 'Approved' ? 'Send the receipt confirmation to the agent.' : 'Send the rejection reason and corrective action to the agent.'}</small></span></div>
             {agentMessageHref
               ? <a className="primary admin-whatsapp-action" href={agentMessageHref} target="_blank" rel="noreferrer"><FaWhatsapp /> WhatsApp agent</a>
               : <span className="whatsapp-unavailable">Agent WhatsApp number unavailable</span>}
           </div>}
-          {selected.status === 'Submitted' && <div className="review-actions"><button className="danger-btn" disabled={!online || reviewing} onClick={() => review('Rejected')}><XCircle /> {reviewing ? 'Working...' : 'Reject'}</button><button className="primary" disabled={!online || reviewing || selected.calculated !== selected.declared} onClick={() => review('Approved')}><CheckCircle2 /> {reviewing ? 'Working...' : 'Approve deposit'}</button></div>}
-        </> : <div className="empty-review"><FileCheck2 /><h3>{filteredDeposits.length ? `Select a ${filter.toLowerCase()} deposit` : filterCopy.title}</h3><p>{filteredDeposits.length ? (filter === 'Submitted' ? 'Review the calculated total, bank details, and collection entries before deciding.' : 'Select a deposit from the list to view its details.') : filterCopy.detail}</p></div>}
+          {selected.status === 'Submitted' && <div className="review-actions"><button className="danger-btn" disabled={!online || reviewing} onClick={() => review('Rejected')}><XCircle /> {reviewing ? 'Working...' : 'Reject'}</button><button className="primary" disabled={!online || reviewing || selected.calculated !== selected.declared} onClick={() => review('Approved')}><CheckCircle2 /> {reviewing ? 'Working...' : 'Confirm receipt'}</button></div>}
+        </> : <div className="empty-review"><FileCheck2 /><h3>{filteredDeposits.length ? `Select a ${filter === 'Approved' ? 'received' : filter.toLowerCase()} handover` : filterCopy.title}</h3><p>{filteredDeposits.length ? (filter === 'Submitted' ? 'Review the collection total, handed-over amount, note, and entries before deciding.' : 'Select a handover from the list to view its details.') : filterCopy.detail}</p></div>}
       </section>
     </div>
   </div>
@@ -922,13 +917,12 @@ function TaluksPage({ reload, notify }: { reload: () => Promise<void>; notify: (
       bank_ifsc_code: taluk.bank_ifsc_code || bank?.ifsc_code,
     })
   }
-  const organizationReady = taluks.length > 0 && agents.length > 0 && bankAccounts.length > 0
+  const organizationReady = taluks.length > 0 && agents.length > 0
   const canAddAgent = taluks.some(item => !item.agent_name)
   const canAddBank = agents.some(agent => !taluks.find(item => String(item.id) === String(agent.taluk_id))?.bank_name)
-  const steps: { kind: Exclude<SetupKind, 'member'>; title: string; detail: string; complete: boolean; enabled: boolean }[] = [
+  const steps: { kind: 'taluk' | 'agent'; title: string; detail: string; complete: boolean; enabled: boolean }[] = [
     { kind: 'taluk', title: 'Taluks', detail: `${taluks.length} configured`, complete: taluks.length > 0, enabled: true },
     { kind: 'agent', title: 'Agents', detail: `${agents.length} assigned`, complete: agents.length > 0, enabled: taluks.length > 0 },
-    { kind: 'bank', title: 'Bank accounts', detail: `${bankAccounts.length} configured`, complete: bankAccounts.length > 0, enabled: agents.length > 0 },
   ]
   return <div className="page-stack">
     {!organizationReady && <section className="setup-flow">
@@ -993,7 +987,7 @@ function ReplaceBankModal({ taluk, onClose, reload, notify }: { taluk: Record<st
 
 function EditMemberModal({ member, onClose, reload, notify }: { member: MemberRecord; onClose: () => void; reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
   const { taluks } = useAppData()
-  const readyTaluks = taluks.filter(item => item.is_active && item.agent_name && item.bank_name)
+  const readyTaluks = taluks.filter(item => item.is_active && item.agent_name)
   const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSubmitting(true); setError('')
@@ -1012,7 +1006,7 @@ function InitialSetupModal({ kind, onClose, reload, notify }: { kind: SetupKind;
   const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
   const availableAgentTaluks = taluks.filter(item => !item.agent_name)
   const availableBankAgents = agents.filter(agent => !taluks.find(item => String(item.id) === String(agent.taluk_id))?.bank_name)
-  const readyTaluks = taluks.filter(item => item.agent_name && item.bank_name)
+  const readyTaluks = taluks.filter(item => item.agent_name)
   const titles: Record<SetupKind, string> = { taluk: 'Add taluk', agent: 'Add collection agent', bank: 'Configure bank account', member: 'Add member' }
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSubmitting(true); setError('')
@@ -1101,23 +1095,23 @@ function CollectionModal({ initialMemberId, onClose, onRecord }: { initialMember
   return <Modal title="Record payment" onClose={onClose}><form className="modal-form" onSubmit={submit}><label>Member<select value={memberId} onChange={event => setMemberId(event.target.value)}>{members.filter(item => item.status === 'Active').map(item => <option value={item.id} key={item.id}>{item.code} — {item.name}</option>)}</select></label><label>Collection for<select value={selected?.value || ''} onChange={event => { setTarget(event.target.value); const next = targets.find(item => item.value === event.target.value); setAmount(next?.available || '') }}>{targets.map(item => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>{selected && <section className="balance-box"><span>Available balance</span><strong>{<Money value={selected.available} />}</strong><small>Already collected amounts are excluded.</small></section>}<div className="form-grid"><label>Amount<input type="number" min="1" max={selected?.available || 0} step="0.01" value={amount} onChange={event => setAmount(event.target.value === '' ? '' : Number(event.target.value))} onInput={normalizeMoneyInput} inputMode="decimal" /></label><label>Method<select value={method} onChange={event => setMethod(event.target.value as CollectionRecord['method'])}><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Other</option></select></label></div>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="audit-note"><ShieldCheck /> This creates an auditable collection entry. It cannot be silently deleted.</div><div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting || !selected || amount === '' || amount <= 0} type="submit"><IndianRupee />{submitting ? 'Recording…' : amount === '' ? 'Enter amount' : `Record ${formatAmount(amount)}`}</button></div></form></Modal>
 }
 
-function DepositModal({ collections, onClose, onSubmit }: { collections: CollectionRecord[]; onClose: () => void; onSubmit: (ids: string[], amount: number, reference: string) => void | Promise<void> }) {
+function DepositModal({ collections, onClose, onSubmit }: { collections: CollectionRecord[]; onClose: () => void; onSubmit: (ids: string[], amount: number, note: string) => void | Promise<void> }) {
   const [selected, setSelected] = useState<string[]>(collections.map(item => item.id))
-  const [declared, setDeclared] = useState<number | ''>(0), [reference, setReference] = useState('')
+  const [declared, setDeclared] = useState<number | ''>(0), [note, setNote] = useState('')
   const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false)
   const total = collections.filter(item => selected.includes(item.id)).reduce((sum, item) => sum + item.amount, 0)
   useEffect(() => setDeclared(total), [total])
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setSubmitting(true); setError('')
-    try { await onSubmit(selected, Number(declared), reference) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Deposit could not be submitted.') }
+    try { await onSubmit(selected, Number(declared), note) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Handover could not be submitted.') }
     finally { setSubmitting(false) }
   }
-  return <Modal title="Create deposit batch" onClose={onClose} wide><form className="modal-form" onSubmit={submit}><section className="bank-destination"><Landmark /><div><span>Deposit destination</span><strong>Your assigned bank account</strong><small>The backend snapshots the configured bank details.</small></div></section><div className="select-head"><span>{selected.length} collection entries selected</span><button type="button" onClick={() => setSelected(selected.length === collections.length ? [] : collections.map(item => item.id))}>{selected.length === collections.length ? 'Clear all' : 'Select all'}</button></div><div className="collection-select">{collections.map(item => <label key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={() => setSelected(selected.includes(item.id) ? selected.filter(id => id !== item.id) : [...selected, item.id])} /><span><strong>{item.member}</strong><small>{item.label} · {item.receipt}</small></span><b>{<Money value={item.amount} />}</b></label>)}</div><section className="calculated-total"><span>System-calculated total</span><strong>{<Money value={total} />}</strong></section><div className="form-grid"><label>Actual deposited amount<input type="number" step="0.01" min="0" value={declared} onChange={event => setDeclared(event.target.value === '' ? '' : Number(event.target.value))} onInput={normalizeMoneyInput} inputMode="decimal" /></label><label>Bank reference<input required value={reference} onChange={event => setReference(event.target.value)} placeholder="Enter transaction reference" /></label></div>{declared !== total && <p className="form-error"><AlertCircle /> The declared amount must exactly match {<Money value={total} />}.</p>}{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting || !selected.length || declared === '' || declared !== total} type="submit">{submitting ? 'Submitting…' : 'Submit for review'}</button></div></form></Modal>
+  return <Modal title="Prepare collection handover" onClose={onClose} wide><form className="modal-form" onSubmit={submit}><section className="bank-destination"><WalletCards /><div><span>Handover recipient</span><strong>Karunya Sparsham administrator</strong><small>The administrator confirms the amount after receiving it.</small></div></section><div className="select-head"><span>{selected.length} collection entries selected</span><button type="button" onClick={() => setSelected(selected.length === collections.length ? [] : collections.map(item => item.id))}>{selected.length === collections.length ? 'Clear all' : 'Select all'}</button></div><div className="collection-select">{collections.map(item => <label key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={() => setSelected(selected.includes(item.id) ? selected.filter(id => id !== item.id) : [...selected, item.id])} /><span><strong>{item.member}</strong><small>{item.label} · {item.receipt}</small></span><b>{<Money value={item.amount} />}</b></label>)}</div><section className="calculated-total"><span>System-calculated total</span><strong>{<Money value={total} />}</strong></section><div className="form-grid"><label>Amount handed over<input type="number" step="0.01" min="0" value={declared} onChange={event => setDeclared(event.target.value === '' ? '' : Number(event.target.value))} onInput={normalizeMoneyInput} inputMode="decimal" /></label><label>Handover note <span className="optional-label">Optional</span><input value={note} onChange={event => setNote(event.target.value)} maxLength={1000} placeholder="Add cash count or handover details" /></label></div>{declared !== total && <p className="form-error"><AlertCircle /> The handed-over amount must exactly match {<Money value={total} />}.</p>}{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting || !selected.length || declared === '' || declared !== total} type="submit">{submitting ? 'Submitting…' : 'Submit handover'}</button></div></form></Modal>
 }
 
-function DepositAdminNotice({ notice, onClose }: { notice: { number: string; amount: number; reference: string; submitted: string; href: string }; onClose: () => void }) {
-  return <Modal title="Deposit submitted" onClose={onClose}><div className="modal-form"><section className="bank-destination"><FaWhatsapp /><div><span>Admin WhatsApp</span><strong>+91 94476 45196</strong><small>Deposit review notification</small></div></section><div className="profile-data"><span>Deposit</span><strong>{notice.number}</strong><span>Amount</span><strong>{<Money value={notice.amount} />}</strong><span>Reference</span><strong>{notice.reference}</strong><span>Submitted</span><strong>{notice.submitted}</strong></div><div className="audit-note"><Paperclip /> WhatsApp തുറന്ന ശേഷം സന്ദേശം അയയ്ക്കുന്നതിന് മുമ്പ് ബാങ്ക് നിക്ഷേപ രസീത് അറ്റാച്ച് ചെയ്യുക.</div><div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Close</button><a className="primary admin-whatsapp-action" href={notice.href} target="_blank" rel="noreferrer"><FaWhatsapp /> WhatsApp admin</a></div></div></Modal>
+function DepositAdminNotice({ notice, onClose }: { notice: { number: string; amount: number; note: string; submitted: string; href: string }; onClose: () => void }) {
+  return <Modal title="Handover submitted" onClose={onClose}><div className="modal-form"><section className="bank-destination"><FaWhatsapp /><div><span>Admin WhatsApp</span><strong>+91 94476 45196</strong><small>Collection handover notification</small></div></section><div className="profile-data"><span>Handover</span><strong>{notice.number}</strong><span>Amount</span><strong>{<Money value={notice.amount} />}</strong><span>Note</span><strong>{notice.note}</strong><span>Submitted</span><strong>{notice.submitted}</strong></div><div className="audit-note"><ShieldCheck /> കൈമാറിയ തുകയും കളക്ഷൻ വിവരങ്ങളും അഡ്മിനുമായി സ്ഥിരീകരിക്കുക.</div><div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Close</button><a className="primary admin-whatsapp-action" href={notice.href} target="_blank" rel="noreferrer"><FaWhatsapp /> WhatsApp admin</a></div></div></Modal>
 }
 
 function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
@@ -1136,7 +1130,11 @@ function CasePhoto({ item, large = false }: { item: CaseRecord; large?: boolean 
   if (!item.photoUrl || failed) return <Avatar name={item.name} color={item.accent} large={large} />
   return <img className={`case-photo ${large ? 'large' : ''}`} src={item.photoUrl} alt={`Photo of ${item.name}`} onError={() => setFailed(true)} />
 }
-function Status({ value }: { value: string }) { const key = value.toLowerCase().replaceAll(' ', '-'); return <span className={`status ${key}`}>{['Verified', 'Approved', 'Active', 'Permanent', 'Closed'].includes(value) ? <CheckCircle2 /> : value === 'Rejected' ? <XCircle /> : <Clock3 />}{value}</span> }
+function Status({ value }: { value: string }) { const key = value.toLowerCase().replaceAll(' ', '-'); return <span className={`status ${key}`}>{['Verified', 'Approved', 'Received', 'Active', 'Permanent', 'Closed'].includes(value) ? <CheckCircle2 /> : value === 'Rejected' ? <XCircle /> : <Clock3 />}{value}</span> }
+function HandoverStatus({ value }: { value: DepositRecord['status'] }) {
+  const label = value === 'Approved' ? 'Received' : value === 'Submitted' ? 'Awaiting receipt' : value
+  return <Status value={label} />
+}
 
 function CaseCard({ item, onClick, memberDue, agent = false }: { item: CaseRecord; onClick: () => void; memberDue?: DueRecord; agent?: boolean }) {
   const pct = item.requiredTotal ? Math.min((item.collected / item.requiredTotal) * 100, 100) : 0
@@ -1148,7 +1146,7 @@ function LedgerBreakdown({ required, collected, verified }: { required: number; 
 }
 
 function DepositRow({ deposit, admin = false, onClick, selected = false, action, actionLabel }: { deposit: DepositRecord; admin?: boolean; onClick?: () => void; selected?: boolean; action?: () => void; actionLabel?: string }) {
-  return <article className={`deposit-row ${onClick ? 'interactive' : ''} ${selected ? 'selected' : ''}`} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}><div className="deposit-icon"><Landmark /></div><div><span>{deposit.number}</span><strong>{admin ? deposit.agent : deposit.bank}</strong><small>{admin ? `${deposit.taluk} · ${deposit.submitted}` : deposit.submitted}</small></div><div><strong>{<Money value={deposit.calculated} />}</strong><Status value={deposit.status} /></div>{action ? <button className="small-action" onClick={event => { event.stopPropagation(); action() }}><ArrowRight />{actionLabel}</button> : onClick && <ChevronRight />}</article>
+  return <article className={`deposit-row ${onClick ? 'interactive' : ''} ${selected ? 'selected' : ''}`} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick() } }}><div className="deposit-icon"><WalletCards /></div><div><span>{deposit.number}</span><strong>{admin ? deposit.agent : deposit.taluk}</strong><small>{deposit.submitted}</small></div><div><strong>{<Money value={deposit.calculated} />}</strong><HandoverStatus value={deposit.status} /></div>{action ? <button className="small-action" onClick={event => { event.stopPropagation(); action() }}><ArrowRight />{actionLabel}</button> : onClick && <ChevronRight />}</article>
 }
 
 function MemberRow({ member, pending = member.pending, action, actionLabel = 'Record payment', onClick }: { member: MemberRecord; pending?: number; action?: () => void; actionLabel?: string; onClick?: () => void }) {

@@ -84,29 +84,25 @@ async def publish_death_case(
 
     active_rows = (
         await db.execute(
-            select(Member, Profile, AgentTalukAssignment.agent_profile_id, BankAccount.id)
+            select(Member, Profile, AgentTalukAssignment.agent_profile_id)
             .join(Profile, Profile.id == Member.profile_id)
             .outerjoin(
                 AgentTalukAssignment,
                 (AgentTalukAssignment.taluk_id == Member.taluk_id)
                 & (AgentTalukAssignment.ends_at.is_(None)),
             )
-            .outerjoin(
-                BankAccount,
-                (BankAccount.taluk_id == Member.taluk_id) & (BankAccount.ends_at.is_(None)),
-            )
             .where(Profile.account_status == AccountStatus.ACTIVE)
         )
     ).all()
     unready = {
         str(member.taluk_id)
-        for member, _, agent_id, bank_id in active_rows
-        if agent_id is None or bank_id is None
+        for member, _, agent_id in active_rows
+        if agent_id is None
     }
     if unready:
         raise AppError(
             "TALUK_AGENT_NOT_CONFIGURED",
-            "Every active member's taluk requires an active agent and bank account.",
+            "Every active member's taluk requires an active agent.",
             409,
             {"taluk_ids": sorted(unready)},
         )
@@ -331,21 +327,19 @@ async def create_deposit(
             BankAccount.ends_at.is_(None),
         )
     )
-    if bank is None:
-        raise AppError("TALUK_BANK_NOT_CONFIGURED", "No active assigned bank account exists.", 409)
     total = sum((item.amount for item in collections), Decimal("0"))
     batch = DepositBatch(
-        deposit_number=_reference("DEP"),
+        deposit_number=_reference("HND"),
         agent_profile_id=actor.profile_id,
         taluk_id=taluk_id,
-        bank_account_id=bank.id,
+        bank_account_id=bank.id if bank else None,
         bank_snapshot={
             "bank_name": bank.bank_name,
             "branch_name": bank.branch_name,
             "account_holder_name": bank.account_holder_name,
             "account_number_last4": bank.account_number_last4,
             "ifsc_code": bank.ifsc_code,
-        },
+        } if bank else {},
         calculated_total=total,
         declared_deposit_amount=payload.declared_deposit_amount,
         deposited_at=payload.deposited_at,
@@ -364,8 +358,8 @@ async def create_deposit(
             )
         )
     await _audit(
-        db, actor, request_id, "DEPOSIT_DRAFT_CREATED", "deposit_batch", batch.id,
-        after={"deposit_number": batch.deposit_number, "calculated_total": str(total), "items": len(collections)},
+        db, actor, request_id, "HANDOVER_DRAFT_CREATED", "deposit_batch", batch.id,
+        after={"handover_number": batch.deposit_number, "calculated_total": str(total), "items": len(collections)},
     )
     await db.commit()
     await db.refresh(batch)
@@ -385,11 +379,11 @@ async def submit_deposit(
         .with_for_update()
     )
     if batch is None:
-        raise AppError("FORBIDDEN_RESOURCE", "Deposit was not found.", 404)
+        raise AppError("FORBIDDEN_RESOURCE", "Handover was not found.", 404)
     if batch.status != DepositStatus.DRAFT:
-        raise AppError("DEPOSIT_NOT_SUBMITTED", "Only a draft deposit can be submitted.", 409)
+        raise AppError("HANDOVER_NOT_SUBMITTED", "Only a draft handover can be submitted.", 409)
     if batch.version != expected_version:
-        raise AppError("VERSION_CONFLICT", "Deposit was changed by another request.", 409)
+        raise AppError("VERSION_CONFLICT", "Handover was changed by another request.", 409)
     items = (
         await db.execute(
             select(DepositItem, CollectionTransaction)
@@ -399,7 +393,7 @@ async def submit_deposit(
         )
     ).all()
     if not items:
-        raise AppError("VALIDATION_ERROR", "A deposit requires at least one collection.", 422)
+        raise AppError("VALIDATION_ERROR", "A handover requires at least one collection.", 422)
     total = sum((item.amount_snapshot for item, _ in items), Decimal("0"))
     if any(collection.status != CollectionStatus.RECORDED for _, collection in items):
         raise AppError("COLLECTION_ALREADY_BATCHED", "A collection is no longer eligible.", 409)
@@ -408,7 +402,7 @@ async def submit_deposit(
     batch.submitted_at = datetime.now(timezone.utc)
     for _, collection in items:
         collection.status = CollectionStatus.BATCHED
-    await _audit(db, actor, request_id, "DEPOSIT_SUBMITTED", "deposit_batch", batch.id, after={"total": str(total)})
+    await _audit(db, actor, request_id, "HANDOVER_SUBMITTED", "deposit_batch", batch.id, after={"total": str(total)})
     await db.commit()
     await db.refresh(batch)
     return batch
@@ -425,11 +419,11 @@ async def review_deposit(
 ) -> DepositBatch:
     batch = await db.scalar(select(DepositBatch).where(DepositBatch.id == batch_id).with_for_update())
     if batch is None:
-        raise AppError("FORBIDDEN_RESOURCE", "Deposit was not found.", 404)
+        raise AppError("FORBIDDEN_RESOURCE", "Handover was not found.", 404)
     if batch.status != DepositStatus.SUBMITTED:
-        raise AppError("DEPOSIT_ALREADY_REVIEWED", "Deposit is not awaiting review.", 409)
+        raise AppError("HANDOVER_ALREADY_REVIEWED", "Handover is not awaiting review.", 409)
     if batch.version != expected_version:
-        raise AppError("VERSION_CONFLICT", "Deposit was changed by another request.", 409)
+        raise AppError("VERSION_CONFLICT", "Handover was changed by another request.", 409)
     item_rows = (
         await db.execute(
             select(DepositItem, CollectionTransaction)
@@ -447,14 +441,14 @@ async def review_deposit(
     if approve:
         if calculated != batch.declared_deposit_amount:
             raise AppError(
-                "DEPOSIT_TOTAL_MISMATCH",
-                "The deposited amount must equal the selected collection total.",
+                "HANDOVER_TOTAL_MISMATCH",
+                "The handed-over amount must equal the selected collection total.",
                 409,
             )
         batch.status = DepositStatus.APPROVED
         for _, collection in item_rows:
             if collection.status != CollectionStatus.BATCHED:
-                raise AppError("DEPOSIT_ALREADY_REVIEWED", "Collection state is invalid.", 409)
+                raise AppError("HANDOVER_ALREADY_REVIEWED", "Collection state is invalid.", 409)
             collection.status = CollectionStatus.VERIFIED
             affected_members.add(collection.member_id)
             if collection.collection_type == CollectionType.DEATH_CONTRIBUTION:
@@ -500,7 +494,7 @@ async def review_deposit(
             db.add(recipient)
             await db.flush()
             db.add(NotificationOutbox(recipient_id=recipient.id))
-        action = "DEPOSIT_APPROVED"
+        action = "HANDOVER_RECEIVED"
     else:
         if not reason or not reason.strip():
             raise AppError("VALIDATION_ERROR", "A rejection reason is required.", 422)
@@ -511,10 +505,10 @@ async def review_deposit(
             collection.status = CollectionStatus.RECORDED
         event = NotificationEvent(
             type=NotificationType.DEPOSIT_REJECTED,
-            title="Deposit needs correction",
+            title="Handover needs correction",
             body_template=reason.strip(),
             template_data={"deposit_id": str(batch.id)},
-            deep_link=f"/agent/deposits/{batch.id}",
+            deep_link=f"/agent/handovers/{batch.id}",
             related_entity_type="deposit_batch",
             related_entity_id=batch.id,
         )
@@ -524,7 +518,7 @@ async def review_deposit(
         db.add(recipient)
         await db.flush()
         db.add(NotificationOutbox(recipient_id=recipient.id))
-        action = "DEPOSIT_REJECTED"
+        action = "HANDOVER_REJECTED"
     await _audit(db, actor, request_id, action, "deposit_batch", batch.id, after={"total": str(calculated), "reason": reason})
     await db.commit()
     await db.refresh(batch)

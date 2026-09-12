@@ -69,6 +69,7 @@ export interface DepositRecord {
   status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected'
   collectionIds: string[]
   reference: string
+  note: string
   rejectionReason?: string
   version?: number
 }

@@ -122,7 +122,7 @@ test.describe('financial collection workflow', () => {
   test.skip(!mutationsEnabled || !adminLoginId || !adminPassword,
     'Set E2E_ALLOW_MUTATIONS=true, E2E_ADMIN_LOGIN_ID, and E2E_ADMIN_PASSWORD.')
 
-  test('admin publishes case, agent deposits collection, admin approves, member balance updates', async ({ page }, testInfo) => {
+  test('admin publishes case, agent hands over collection, admin confirms receipt, member balance updates', async ({ page }, testInfo) => {
     assertSafeTarget(baseURL)
 
     const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -224,7 +224,7 @@ test.describe('financial collection workflow', () => {
         await uiLogout(page)
       })
 
-      await test.step('agent records the member collection and submits a deposit', async () => {
+      await test.step('agent records the member collection and submits a handover', async () => {
         await uiLogin(page, agent.loginId, agent.temporaryPassword, 'agent', agent.password)
         await page.goto('/agent/collect')
         await page.getByRole('button', { name: 'Record payment' }).click()
@@ -235,25 +235,25 @@ test.describe('financial collection workflow', () => {
         await page.getByRole('button', { name: /^Record / }).click()
         await expect(page.getByText(new RegExp(`collection recorded for ${member.name}`))).toBeVisible()
 
-        await page.goto('/agent/deposits')
-        await page.getByRole('button', { name: 'New deposit' }).click()
-        await page.getByLabel('Bank reference').fill(`E2E-${suffix}`)
-        await page.getByRole('button', { name: 'Submit for review' }).click()
-        await expect(page.getByText('Deposit submitted for admin verification.')).toBeVisible()
+        await page.goto('/agent/handovers')
+        await page.getByRole('button', { name: 'New handover' }).click()
+        await page.getByLabel(/Handover note/).fill(`E2E-${suffix}`)
+        await page.getByRole('button', { name: 'Submit handover' }).click()
+        await expect(page.getByText('Handover submitted for administrator confirmation.')).toBeVisible()
         const adminWhatsApp = page.getByRole('link', { name: 'WhatsApp admin' })
         await expect(adminWhatsApp).toHaveAttribute('href', /wa\.me\/919447645196/)
         await page.getByRole('button', { name: 'Close', exact: true }).click()
         await uiLogout(page)
       })
 
-      await test.step('admin approves the submitted deposit', async () => {
+      await test.step('admin confirms the submitted handover', async () => {
         await uiLogin(page, adminLoginId, adminPassword, 'admin')
-        await page.goto('/admin/deposits')
+        await page.goto('/admin/handovers')
         const depositRow = page.locator('.deposit-row').filter({ hasText: agent.name }).first()
         await expect(depositRow).toBeVisible()
         await depositRow.click()
-        await page.getByRole('button', { name: 'Approve deposit' }).click()
-        await expect(page.getByText('Deposit approved. Send WhatsApp messages from the member list.')).toBeVisible()
+        await page.getByRole('button', { name: 'Confirm receipt' }).click()
+        await expect(page.getByText('Handover received. WhatsApp messages are ready for the agent and members.')).toBeVisible()
         await uiLogout(page)
       })
 

@@ -192,7 +192,7 @@ async def deposit_rows(db: AsyncSession, actor: CurrentActor) -> list[dict]:
             "agent_name": agent_name,
             "agent_phone": agent_phone,
             "taluk_name": taluk_name,
-            "bank_name": batch.bank_snapshot.get("bank_name", "Assigned bank"),
+            "bank_name": batch.bank_snapshot.get("bank_name", ""),
             "bank_last4": batch.bank_snapshot.get("account_number_last4", ""),
             "calculated_total": batch.calculated_total,
             "declared_deposit_amount": batch.declared_deposit_amount,
@@ -200,6 +200,7 @@ async def deposit_rows(db: AsyncSession, actor: CurrentActor) -> list[dict]:
             "status": batch.status,
             "collection_ids": collection_ids[batch.id],
             "bank_reference": batch.bank_reference,
+            "handover_note": batch.agent_message,
             "rejection_reason": batch.rejection_reason,
             "version": batch.version,
         }

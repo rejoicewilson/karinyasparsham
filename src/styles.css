@@ -175,8 +175,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .agent-contact button { width: 44px; height: 44px; border: 1px solid #c7d3cb; border-radius: 5px; background: white; color: var(--green); display: grid; place-items: center; }
 .status { width: fit-content; display: inline-flex; align-items: center; gap: 4px; border-radius: 3px; padding: 4px 6px; background: #eef1ef; color: #59635d; font-size: 9px; font-weight: 800; white-space: nowrap; }
 .status svg { width: 11px; height: 11px; }
-.status.verified, .status.approved, .status.active, .status.permanent, .status.closed { background: #e5f3e9; color: #176235; }
-.status.awaiting-verification, .status.submitted, .status.batched { background: #fff2d3; color: #886000; }
+.status.verified, .status.approved, .status.received, .status.active, .status.permanent, .status.closed { background: #e5f3e9; color: #176235; }
+.status.awaiting-verification, .status.awaiting-receipt, .status.submitted, .status.batched { background: #fff2d3; color: #886000; }
 .status.partially-paid, .status.open, .status.recorded, .status.regular { background: #e8eff8; color: #365e86; }
 .status.unpaid, .status.rejected { background: #fbe7e5; color: #a5332e; }
 .action-wide { width: 100%; justify-content: space-between; padding: 0 18px; }
@@ -438,6 +438,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .bank-destination div { display: grid; }
 .bank-destination strong { font-size: 12px; }
 .bank-destination small { color: var(--muted); font-size: 9px; }
+.optional-label { display: inline; color: var(--muted); font-size: 9px; font-weight: 500; }
 .select-head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; }
 .select-head button { border: 0; background: transparent; color: var(--green); min-height: 38px; font-size: 10px; font-weight: 700; }
 .collection-select { max-height: 270px; overflow: auto; background: white; border: 1px solid var(--line); border-radius: 5px; }

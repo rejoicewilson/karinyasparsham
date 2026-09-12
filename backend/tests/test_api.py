@@ -26,3 +26,8 @@ def test_protected_endpoint_requires_authentication():
     response = client.get("/api/v1/me")
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTH_INVALID_CREDENTIALS"
+
+
+def test_handover_endpoints_require_authentication():
+    assert client.get("/api/v1/agent/handovers").status_code == 401
+    assert client.get("/api/v1/admin/handovers").status_code == 401
