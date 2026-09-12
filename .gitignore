@@ -16,6 +16,7 @@ dist/
 playwright-report/
 test-results/
 blob-report/
+backups/
 
 # Python
 __pycache__/
