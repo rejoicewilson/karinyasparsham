@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.security import CurrentActor, get_current_actor
 from app.models.domain import (
+    AccountStatus,
     AgentTalukAssignment,
     AuditLog,
     BankAccount,
@@ -70,6 +71,7 @@ async def case_rows(db: AsyncSession) -> list[dict]:
             .join(Member, Member.id == DeathCase.deceased_member_id)
             .join(Profile, Profile.id == Member.profile_id)
             .join(Taluk, Taluk.id == Member.taluk_id)
+            .where(Taluk.is_active.is_(True))
             .order_by(DeathCase.created_at.desc())
         )
     ).all()
@@ -121,8 +123,10 @@ async def collection_rows(db: AsyncSession, actor: CurrentActor, member_id=None)
         select(CollectionTransaction, Profile.full_name, DeathCase.id, DeathCase.title)
         .join(Member, Member.id == CollectionTransaction.member_id)
         .join(Profile, Profile.id == Member.profile_id)
+        .join(Taluk, Taluk.id == Member.taluk_id)
         .outerjoin(CaseObligation, CaseObligation.id == CollectionTransaction.case_obligation_id)
         .outerjoin(DeathCase, DeathCase.id == CaseObligation.death_case_id)
+        .where(Taluk.is_active.is_(True))
         .order_by(CollectionTransaction.collected_at.desc())
     )
     if actor.role == UserRole.AGENT:
@@ -161,6 +165,7 @@ async def deposit_rows(db: AsyncSession, actor: CurrentActor) -> list[dict]:
         select(DepositBatch, Profile.full_name, Profile.phone, Taluk.name)
         .join(Profile, Profile.id == DepositBatch.agent_profile_id)
         .join(Taluk, Taluk.id == DepositBatch.taluk_id)
+        .where(Taluk.is_active.is_(True))
         .order_by(DepositBatch.created_at.desc())
     )
     if actor.role == UserRole.AGENT:
@@ -208,6 +213,7 @@ async def member_rows(db: AsyncSession, actor: CurrentActor, taluk_id=None) -> l
         .join(Profile, Profile.id == Member.profile_id)
         .join(Taluk, Taluk.id == Member.taluk_id)
         .outerjoin(PermanentMembershipAccount, PermanentMembershipAccount.member_id == Member.id)
+        .where(Taluk.is_active.is_(True))
         .order_by(Member.member_code)
     )
     if actor.role == UserRole.AGENT:
@@ -295,7 +301,10 @@ async def workspace(
         await db.execute(
             select(NotificationRecipient, NotificationEvent)
             .join(NotificationEvent, NotificationEvent.id == NotificationRecipient.event_id)
-            .where(NotificationRecipient.profile_id == actor.profile_id)
+            .where(
+                NotificationRecipient.profile_id == actor.profile_id,
+                NotificationRecipient.recipient_payload["archived"].as_boolean().is_not(True),
+            )
             .order_by(NotificationRecipient.created_at.desc())
             .limit(50)
         )
@@ -370,7 +379,11 @@ async def workspace(
         data["members"] = await member_rows(db, actor)
         data["collections"] = await collection_rows(db, actor)
         data["deposits"] = await deposit_rows(db, actor)
-        taluks = (await db.scalars(select(Taluk).order_by(Taluk.name))).all()
+        taluks = (
+            await db.scalars(
+                select(Taluk).where(Taluk.is_active.is_(True)).order_by(Taluk.name)
+            )
+        ).all()
         assignments = (
             await db.execute(
                 select(AgentTalukAssignment, Profile)
@@ -379,7 +392,14 @@ async def workspace(
             )
         ).all()
         agent_profiles = (
-            await db.scalars(select(Profile).where(Profile.role == UserRole.AGENT).order_by(Profile.full_name))
+            await db.scalars(
+                select(Profile)
+                .where(
+                    Profile.role == UserRole.AGENT,
+                    Profile.account_status == AccountStatus.ACTIVE,
+                )
+                .order_by(Profile.full_name)
+            )
         ).all()
         assignment_by_agent = {assignment.agent_profile_id: assignment for assignment, _ in assignments}
         agent_by_taluk = {assignment.taluk_id: profile for assignment, profile in assignments}

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.api.responses import success
 from app.core.security import CurrentActor, get_current_actor
-from app.models.domain import DeathCase
+from app.models.domain import DeathCase, Member, Taluk
 
 
 router = APIRouter()
@@ -40,6 +40,13 @@ async def death_cases(
     db: AsyncSession = Depends(get_db),
 ):
     rows = (
-        await db.scalars(select(DeathCase).order_by(DeathCase.created_at.desc()).limit(limit))
+        await db.scalars(
+            select(DeathCase)
+            .join(Member, Member.id == DeathCase.deceased_member_id)
+            .join(Taluk, Taluk.id == Member.taluk_id)
+            .where(Taluk.is_active.is_(True))
+            .order_by(DeathCase.created_at.desc())
+            .limit(limit)
+        )
     ).all()
     return success(request, rows)

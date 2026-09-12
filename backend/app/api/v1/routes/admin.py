@@ -42,7 +42,11 @@ async def list_taluks(
     request: Request,
     _: CurrentActor = Depends(admin_only), db: AsyncSession = Depends(get_db)
 ):
-    return success(request, (await db.scalars(select(Taluk).order_by(Taluk.name))).all())
+    return success(request, (
+        await db.scalars(
+            select(Taluk).where(Taluk.is_active.is_(True)).order_by(Taluk.name)
+        )
+    ).all())
 
 
 @router.post("/taluks", status_code=status.HTTP_201_CREATED)
@@ -124,7 +128,10 @@ async def list_agents(
                 (AgentTalukAssignment.agent_profile_id == Profile.id)
                 & (AgentTalukAssignment.ends_at.is_(None)),
             )
-            .where(Profile.role == UserRole.AGENT)
+            .where(
+                Profile.role == UserRole.AGENT,
+                Profile.account_status == AccountStatus.ACTIVE,
+            )
             .order_by(Profile.full_name)
         )
     ).all()
@@ -270,7 +277,11 @@ async def list_members(
 ):
     rows = (
         await db.execute(
-            select(Member, Profile).join(Profile, Profile.id == Member.profile_id).order_by(Member.member_code)
+            select(Member, Profile)
+            .join(Profile, Profile.id == Member.profile_id)
+            .join(Taluk, Taluk.id == Member.taluk_id)
+            .where(Taluk.is_active.is_(True))
+            .order_by(Member.member_code)
         )
     ).all()
     return success(request, [
@@ -390,7 +401,14 @@ async def list_bank_accounts(
     _: CurrentActor = Depends(admin_only),
     db: AsyncSession = Depends(get_db),
 ):
-    accounts = (await db.scalars(select(BankAccount).order_by(BankAccount.created_at.desc()))).all()
+    accounts = (
+        await db.scalars(
+            select(BankAccount)
+            .join(Taluk, Taluk.id == BankAccount.taluk_id)
+            .where(Taluk.is_active.is_(True), BankAccount.ends_at.is_(None))
+            .order_by(BankAccount.created_at.desc())
+        )
+    ).all()
     return success(request, [
         {
             "id": item.id, "taluk_id": item.taluk_id, "agent_profile_id": item.agent_profile_id,
@@ -608,7 +626,13 @@ async def list_deposits(
     _: CurrentActor = Depends(admin_only),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(DepositBatch).order_by(DepositBatch.created_at.desc()).limit(100)
+    query = (
+        select(DepositBatch)
+        .join(Taluk, Taluk.id == DepositBatch.taluk_id)
+        .where(Taluk.is_active.is_(True))
+        .order_by(DepositBatch.created_at.desc())
+        .limit(100)
+    )
     if review_status is not None:
         query = query.where(DepositBatch.status == review_status)
     return success(request, (await db.scalars(query)).all())
