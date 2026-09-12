@@ -54,6 +54,13 @@ test('administrator filters members and counts by taluk on mobile', async ({ pag
   await mockMembersWorkspace(page)
   await page.goto('/admin/members')
 
+  const talukBox = await page.getByLabel('Filter members by taluk').boundingBox()
+  const addMemberBox = await page.getByRole('button', { name: 'Add member' }).boundingBox()
+  expect(talukBox).not.toBeNull()
+  expect(addMemberBox).not.toBeNull()
+  expect(Math.abs(talukBox!.y - addMemberBox!.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(talukBox!.height - addMemberBox!.height)).toBeLessThanOrEqual(1)
+
   await expect(page.getByRole('button', { name: 'Active (2)' })).toBeVisible()
   await page.getByLabel('Filter members by taluk').selectOption('Vellarikundu')
   await expect(page.getByRole('button', { name: 'Active (1)' })).toBeVisible()
