@@ -489,7 +489,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 
 @media (min-width: 1050px) {
   .admin .sidebar { transform: translateX(0); }
-  .admin .app-main { margin-left: 274px; }
+  .admin .app-main { width: calc(100% - 274px); margin-left: 274px; }
   .admin .menu-btn, .admin .drawer-close { display: none; }
   .admin .topbar { padding-left: 28px; padding-right: 28px; }
   .admin .content { padding-bottom: 45px; }
