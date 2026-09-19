@@ -29,6 +29,8 @@ def main() -> None:
     parser.add_argument("--paid-through-case", type=int, required=True)
     parser.add_argument("--through-case", type=int, required=True)
     parser.add_argument("--receipt-prefix", required=True)
+    parser.add_argument("--dropped-member-code")
+    parser.add_argument("--dropped-paid-through-case", type=int)
     parser.add_argument("--admin-login", default="admin")
     parser.add_argument("--expected-members", type=int)
     parser.add_argument("--expected-paid-obligations", type=int)
@@ -41,6 +43,12 @@ def main() -> None:
 
     if args.paid_through_case < 0 or args.paid_through_case > args.through_case:
         raise SystemExit("Paid-through case must be between zero and through-case.")
+    if (args.dropped_member_code is None) != (args.dropped_paid_through_case is None):
+        raise SystemExit("Dropped member code and paid-through case must be supplied together.")
+    if args.dropped_paid_through_case is not None and not (
+        0 <= args.dropped_paid_through_case <= args.paid_through_case
+    ):
+        raise SystemExit("Dropped member paid-through case is outside the allowed range.")
     source_rows = load_rows(args.source.resolve())
     selected_rows = [row for row in source_rows if int(row["legacy_no"]) <= args.through_case]
     if [int(row["legacy_no"]) for row in selected_rows] != list(range(1, args.through_case + 1)):
@@ -88,7 +96,24 @@ def main() -> None:
                 (taluk["id"],),
             )
             members = cursor.fetchall()
-            non_active = [member["member_code"] for member in members if member["account_status"] != "ACTIVE"]
+            dropped = None
+            if args.dropped_member_code:
+                matches = [
+                    member for member in members
+                    if member["member_code"].casefold() == args.dropped_member_code.casefold()
+                ]
+                if len(matches) != 1:
+                    raise SystemExit("Dropped member code did not match exactly one member.")
+                dropped = matches[0]
+            non_active = [
+                member["member_code"] for member in members
+                if member["account_status"] != "ACTIVE"
+                and not (
+                    dropped is not None
+                    and member["id"] == dropped["id"]
+                    and member["account_status"] == "INACTIVE"
+                )
+            ]
             if non_active:
                 raise SystemExit("Every member must be active for this uniform import: " + ", ".join(non_active))
 
@@ -113,9 +138,14 @@ def main() -> None:
             paid_specs = []
             pending_specs = []
             for member in members:
-                for sequence in range(1, args.through_case + 1):
+                is_dropped = dropped is not None and member["id"] == dropped["id"]
+                member_paid_through = (
+                    args.dropped_paid_through_case if is_dropped else args.paid_through_case
+                )
+                member_through = member_paid_through if is_dropped else args.through_case
+                for sequence in range(1, member_through + 1):
                     case = case_by_number[f"HIST-{sequence:03d}"]
-                    paid = sequence <= args.paid_through_case
+                    paid = sequence <= member_paid_through
                     spec = {
                         "member": member,
                         "case": case,
@@ -183,6 +213,11 @@ def main() -> None:
                 "members": len(members),
                 "paid_through_case": args.paid_through_case,
                 "through_case": args.through_case,
+                "dropped_member_code": dropped["member_code"] if dropped else None,
+                "dropped_paid_through_case": args.dropped_paid_through_case,
+                "dropped_member_will_be_inactive": bool(
+                    dropped and dropped["account_status"] != "INACTIVE"
+                ),
                 "paid_obligations": len(paid_specs),
                 "verified_amount": str(paid_amount),
                 "pending_obligations": len(pending_specs),
@@ -208,6 +243,31 @@ def main() -> None:
             )
             if not all(guards):
                 raise SystemExit("One or more expected-total guards do not match the dry run.")
+
+            if dropped and dropped["account_status"] != "INACTIVE":
+                cursor.execute(
+                    "UPDATE profiles SET account_status = 'INACTIVE', must_change_password = false "
+                    "WHERE id = (SELECT profile_id FROM members WHERE id = %s)",
+                    (dropped["id"],),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_logs (
+                        actor_profile_id, actor_role, action, entity_type, entity_id,
+                        before_data, after_data, request_id, metadata
+                    ) VALUES (%s, 'ADMIN', 'MEMBER_DEACTIVATED_HISTORICAL', 'member', %s,
+                              %s::jsonb, %s::jsonb, %s, %s::jsonb)
+                    """,
+                    (
+                        admin["id"], dropped["id"],
+                        json.dumps({"account_status": dropped["account_status"]}),
+                        json.dumps({
+                            "account_status": "INACTIVE",
+                            "paid_through_case": args.dropped_paid_through_case,
+                        }),
+                        uuid.uuid4(), json.dumps({"source": "pre_application_records"}),
+                    ),
+                )
 
             for key, spec in desired.items():
                 if key in existing:
@@ -276,6 +336,8 @@ def main() -> None:
                         "members": len(members),
                         "paid_through_case": args.paid_through_case,
                         "through_case": args.through_case,
+                        "dropped_member_code": dropped["member_code"] if dropped else None,
+                        "dropped_paid_through_case": args.dropped_paid_through_case,
                         "paid_obligations": len(paid_specs),
                         "verified_amount": str(paid_amount),
                         "pending_obligations": len(pending_specs),
