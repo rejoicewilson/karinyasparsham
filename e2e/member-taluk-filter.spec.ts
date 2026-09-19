@@ -25,6 +25,18 @@ const members = [
   obligations: [],
 }))
 
+const cases = [
+  {
+    id: 'case-1', case_number: 'HIST-001', deceased_name: 'Historical member', taluk_name: 'Kasargod',
+    death_date: '2026-01-20', created_at: '2026-01-20T12:00:00Z', contribution_amount: 200,
+    required_amount: 600, collected_amount: 300, verified_amount: 300, status: 'OPEN', details: 'Historical case',
+    taluk_progress: [
+      { id: 'ksd', name: 'Kasargod', required: 400, collected: 250, verified: 250 },
+      { id: 'ksd-03', name: 'Vellarikundu', required: 200, collected: 50, verified: 50 },
+    ],
+  },
+]
+
 async function mockMembersWorkspace(page: Page) {
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -33,7 +45,7 @@ async function mockMembersWorkspace(page: Page) {
       : path.endsWith('/workspace')
         ? {
             profile,
-            cases: [],
+            cases,
             members,
             dues: [],
             collections: [],
@@ -63,6 +75,11 @@ test('administrator filters members and counts by taluk on mobile', async ({ pag
 
   await expect(page.getByRole('button', { name: 'Active (2)' })).toBeVisible()
   await page.getByLabel('Filter members by taluk').selectOption('Vellarikundu')
+  const summary = page.getByRole('region', { name: 'Vellarikundu financial summary' })
+  await expect(summary.getByText('Death cases')).toBeVisible()
+  await expect(summary.getByText('1', { exact: true })).toBeVisible()
+  await expect(summary.getByText('50', { exact: true })).toBeVisible()
+  await expect(summary.getByText('150', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Active (1)' })).toBeVisible()
   await expect(page.getByText('Vellarikundu Active')).toBeVisible()
   await expect(page.getByText('Kasargod Active')).toHaveCount(0)

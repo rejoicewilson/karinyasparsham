@@ -838,7 +838,7 @@ function MembersPage({ role, reload, notify }: { role: 'agent' | 'admin'; reload
   const [filter, setFilter] = useState<'Active' | 'Permanent' | 'Inactive'>('Active')
   const [talukFilter, setTalukFilter] = useState('All')
   const [editing, setEditing] = useState<MemberRecord | null>(null)
-  const { members } = useAppData()
+  const { members, cases } = useAppData()
   const talukOptions = useMemo(() => [...new Set(members.map(member => member.taluk).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [members])
   const talukMembers = talukFilter === 'All' ? members : members.filter(member => member.taluk === talukFilter)
   const visible = talukMembers.filter(member => {
@@ -847,7 +847,17 @@ function MembersPage({ role, reload, notify }: { role: 'agent' | 'admin'; reload
     return matchesFilter && (member.name.toLowerCase().includes(term) || member.code.toLowerCase().includes(term) || member.phone.toLowerCase().includes(term))
   })
   const counts = { Active: talukMembers.filter(item => item.status === 'Active').length, Permanent: talukMembers.filter(item => item.membership === 'Permanent').length, Inactive: talukMembers.filter(item => item.status !== 'Active').length }
-  return <div className="page-stack"><div className="toolbar member-toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search name, member code or phone" />{role === 'admin' && <label className="taluk-filter"><select aria-label="Filter members by taluk" value={talukFilter} onChange={event => setTalukFilter(event.target.value)}><option value="All">All taluks</option>{talukOptions.map(taluk => <option value={taluk} key={taluk}>{taluk}</option>)}</select></label>}{role === 'admin' && <button className="primary" onClick={() => setAdding(true)}><Plus /> Add member</button>}</div><div className="filter-row">{(['Active', 'Permanent', 'Inactive'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status} ({counts[status]})</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={role === 'admin' ? () => setEditing(m) : undefined} actionLabel="Edit" onClick={role === 'agent' ? () => navigate(`/agent/members/${m.id}`) : undefined} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search, taluk, or member status.</p></div>}{adding && reload && notify && <InitialSetupModal kind="member" onClose={() => setAdding(false)} reload={reload} notify={notify} />}{editing && reload && notify && <EditMemberModal member={editing} onClose={() => setEditing(null)} reload={reload} notify={notify} />}</div>
+  const talukCaseRows = talukFilter === 'All'
+    ? cases.map(item => ({ id: item.id, required: item.requiredTotal, collected: item.collected }))
+    : cases.flatMap(item => item.talukProgress
+      .filter(progress => progress.name === talukFilter)
+      .map(progress => ({ id: item.id, required: progress.required, collected: progress.collected })))
+  const talukSummary = {
+    cases: talukCaseRows.length,
+    collected: talukCaseRows.reduce((sum, item) => sum + item.collected, 0),
+    pending: talukCaseRows.reduce((sum, item) => sum + Math.max(item.required - item.collected, 0), 0),
+  }
+  return <div className="page-stack"><div className="toolbar member-toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search name, member code or phone" />{role === 'admin' && <label className="taluk-filter"><select aria-label="Filter members by taluk" value={talukFilter} onChange={event => setTalukFilter(event.target.value)}><option value="All">All taluks</option>{talukOptions.map(taluk => <option value={taluk} key={taluk}>{taluk}</option>)}</select></label>}{role === 'admin' && <button className="primary" onClick={() => setAdding(true)}><Plus /> Add member</button>}</div>{role === 'admin' && <section className="taluk-summary" aria-label={`${talukFilter === 'All' ? 'All taluks' : talukFilter} financial summary`}><div><HeartHandshake /><span>Death cases</span><strong>{talukSummary.cases}</strong></div><div><BadgeCheck /><span>Collected</span><strong><Money value={talukSummary.collected} /></strong></div><div><Clock3 /><span>Pending</span><strong><Money value={talukSummary.pending} /></strong></div></section>}<div className="filter-row">{(['Active', 'Permanent', 'Inactive'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status} ({counts[status]})</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={role === 'admin' ? () => setEditing(m) : undefined} actionLabel="Edit" onClick={role === 'agent' ? () => navigate(`/agent/members/${m.id}`) : undefined} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search, taluk, or member status.</p></div>}{adding && reload && notify && <InitialSetupModal kind="member" onClose={() => setAdding(false)} reload={reload} notify={notify} />}{editing && reload && notify && <EditMemberModal member={editing} onClose={() => setEditing(null)} reload={reload} notify={notify} />}</div>
 }
 
 function MemberDetail({ id, collections }: { id: string; collections: CollectionRecord[] }) {

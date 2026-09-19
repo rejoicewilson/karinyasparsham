@@ -216,6 +216,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .toolbar .primary { flex: 0 0 auto; }
 .taluk-filter { min-width: 190px; }
 .taluk-filter select { height: 46px; min-height: 46px; background-color: #fff; }
+.taluk-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: white; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.taluk-summary > div { min-width: 0; min-height: 78px; padding: 13px 16px; display: grid; grid-template-columns: 30px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 10px; align-content: center; }
+.taluk-summary > div + div { border-left: 1px solid var(--line); }
+.taluk-summary svg { width: 20px; height: 20px; grid-row: 1 / 3; align-self: center; color: var(--green); }
+.taluk-summary span { color: var(--muted); font-size: 10px; line-height: 1.25; }
+.taluk-summary strong { min-width: 0; color: var(--ink); font: 750 18px Manrope; line-height: 1.25; }
 .organization-actions { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .organization-actions button { min-height: 42px; padding: 0 12px; }
 .mobile-section-title { font-size: 17px; }
@@ -511,6 +517,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .member-toolbar .search-box { width: 100%; max-width: none; grid-column: 1 / -1; }
   .member-toolbar .taluk-filter { width: 100%; min-width: 0; }
   .member-toolbar .primary { min-width: 128px; width: auto; }
+  .taluk-summary > div { min-height: 68px; padding: 10px 8px; grid-template-columns: 20px minmax(0, 1fr); column-gap: 5px; }
+  .taluk-summary svg { width: 15px; height: 15px; }
+  .taluk-summary span { font-size: 9px; }
+  .taluk-summary strong { font-size: 14px; }
   .organization-actions { width: 100%; margin-left: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .organization-actions button { min-width: 0; padding: 0 6px; }
   .member-summary { align-items: stretch; flex-direction: column; }
