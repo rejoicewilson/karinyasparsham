@@ -23,6 +23,7 @@ from app.core.config import get_settings  # noqa: E402
 PHONE_PATTERN = re.compile(r"^[0-9]{10}$")
 TALUK_ALIASES = {
     "kasaragod": "Kasargod",
+    "ottapalam": "Ottappalam",
     "mukundhapuram": "Mukundapuram",
     "kottarakara": "Kottarakkara",
     "koyilandy": "Koyilandi",
