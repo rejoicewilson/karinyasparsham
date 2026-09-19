@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -19,6 +19,15 @@ def default_case_amount(sequence: int) -> Decimal:
     if sequence < 1:
         raise ValueError("Monthly sequence must be positive")
     return FIRST_CASE_AMOUNT if sequence <= FIRST_CASE_AMOUNT_LIMIT else LATER_CASE_AMOUNT
+
+
+def eligibility_cutoff_for_case(death_date: date) -> date:
+    return death_date.replace(day=1)
+
+
+def member_is_eligible_for_case(joined_on: date, death_date: date) -> bool:
+    """Membership contributions begin in the calendar month after joining."""
+    return joined_on < eligibility_cutoff_for_case(death_date)
 
 
 def payment_status(required: Decimal, collected: Decimal, verified: Decimal) -> str:

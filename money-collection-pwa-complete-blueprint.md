@@ -40,7 +40,7 @@ This blueprint treats all financial records as auditable ledger entries. Payment
 4. Cases 1, 2 and 3 created in a month default to **₹200 per active member**.
 5. Case 4 and every later case created in the same month default to **₹100 per active member**.
 6. Admin can override the default amount. An override reason is mandatory for audit purposes.
-7. Every active member, except the deceased member, receives an obligation for the published case.
+7. An active member becomes eligible for death-case contributions on the first day of the calendar month after their joining date. Eligible members, except the deceased member, receive an obligation for the published case.
 8. The member who died becomes inactive/deceased and cannot sign in.
 9. A member may pay the full case amount, pay partially, or leave it unpaid.
 10. Member, assigned agent and admin can see required, collected, awaiting-verification, verified and remaining amounts.
@@ -55,7 +55,7 @@ This blueprint treats all financial records as auditable ledger entries. Payment
 4. Only admin-verified money counts toward the ₹15,000 target.
 5. When the verified total reaches ₹15,000, the member is automatically marked as a permanent member.
 6. Overpayment above the remaining permanent-membership balance is blocked.
-7. Permanent members must continue paying all death-case contributions.
+7. Permanent members must continue paying all death-case contributions for which they are eligible under the joining-month rule.
 
 ### 2.4 Collection and bank deposit
 
@@ -343,9 +343,9 @@ stateDiagram-v2
 6. Default amount is ₹200 for sequence 1–3 and ₹100 for sequence 4 onward.
 7. If admin overrides the amount, the backend requires and stores a reason.
 8. Backend deactivates the deceased member and excludes that member from the new obligations.
-9. Backend snapshots all other active members, their taluks and responsible agents and creates one obligation per member.
+9. Backend snapshots active members whose joining month has ended, together with their taluks and responsible agents, and creates one obligation per eligible member other than the deceased member.
 10. Backend commits the case, obligations, audit entry, notification event, in-app recipient rows and push outbox jobs together.
-11. Worker sends push notifications to all active members and agents; in-app notifications already exist even if push delivery fails.
+11. Worker sends member notifications only to members who received an obligation, and sends agent notifications to active agents; in-app notifications already exist even if push delivery fails.
 
 **Precondition:** Every taluk containing active members must have an active agent and active bank account. The publish action must show a readiness error if this configuration is incomplete.
 

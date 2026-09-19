@@ -33,7 +33,7 @@ from app.models.domain import (
     UserRole,
 )
 from app.schemas.api import CollectionCreate, DeathCaseCreate, DepositCreate
-from app.services.rules import default_case_amount, sequence_month
+from app.services.rules import default_case_amount, eligibility_cutoff_for_case, sequence_month
 
 
 def _reference(prefix: str) -> str:
@@ -91,7 +91,10 @@ async def publish_death_case(
                 (AgentTalukAssignment.taluk_id == Member.taluk_id)
                 & (AgentTalukAssignment.ends_at.is_(None)),
             )
-            .where(Profile.account_status == AccountStatus.ACTIVE)
+            .where(
+                Profile.account_status == AccountStatus.ACTIVE,
+                Member.joined_on < eligibility_cutoff_for_case(payload.death_date),
+            )
         )
     ).all()
     unready = {

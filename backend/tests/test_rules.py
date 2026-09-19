@@ -5,6 +5,7 @@ import pytest
 
 from app.services.rules import (
     default_case_amount,
+    member_is_eligible_for_case,
     payment_status,
     permanent_membership_achieved,
     require_exact_deposit,
@@ -23,6 +24,23 @@ def test_monthly_case_amount(sequence, amount):
 def test_month_boundary_uses_kolkata():
     utc_time = datetime(2026, 7, 31, 19, 0, tzinfo=timezone.utc)
     assert sequence_month(utc_time).isoformat() == "2026-08-01"
+
+
+@pytest.mark.parametrize(
+    ("joined_on", "death_date", "eligible"),
+    [
+        ("2026-08-01", "2026-08-31", False),
+        ("2026-08-31", "2026-08-31", False),
+        ("2026-08-01", "2026-09-01", True),
+        ("2026-08-31", "2026-09-01", True),
+        ("2026-09-01", "2026-09-30", False),
+    ],
+)
+def test_member_eligibility_starts_month_after_joining(joined_on, death_date, eligible):
+    assert member_is_eligible_for_case(
+        datetime.fromisoformat(joined_on).date(),
+        datetime.fromisoformat(death_date).date(),
+    ) is eligible
 
 
 @pytest.mark.parametrize(
