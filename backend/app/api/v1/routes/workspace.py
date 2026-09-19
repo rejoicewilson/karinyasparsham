@@ -252,6 +252,7 @@ async def member_rows(db: AsyncSession, actor: CurrentActor, taluk_id=None) -> l
             "id": member.id,
             "profile_id": profile.id,
             "member_code": member.member_code,
+            "ard_no": member.ard_no,
             "full_name": profile.full_name,
             "phone": profile.phone,
             "taluk_id": member.taluk_id,

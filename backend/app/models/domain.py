@@ -164,6 +164,7 @@ class Member(UUIDPrimaryKeyMixin, TimestampMixin, VersionMixin, Base):
         UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"), unique=True
     )
     member_code: Mapped[str] = mapped_column(CITEXT, unique=True)
+    ard_no: Mapped[str | None] = mapped_column(Text)
     taluk_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("taluks.id", ondelete="RESTRICT"), index=True
     )

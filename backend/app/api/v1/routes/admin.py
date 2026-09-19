@@ -286,7 +286,8 @@ async def list_members(
     ).all()
     return success(request, [
         {
-            "id": member.id, "member_code": member.member_code, "full_name": profile.full_name,
+            "id": member.id, "member_code": member.member_code, "ard_no": member.ard_no,
+            "full_name": profile.full_name,
             "phone": profile.phone, "taluk_id": member.taluk_id,
             "membership_type": member.membership_type, "account_status": profile.account_status,
         }
@@ -316,14 +317,15 @@ async def create_member(
         await db.flush()
         member = Member(
             profile_id=profile.id, member_code=payload.member_code.upper(),
-            taluk_id=payload.taluk_id, joined_on=payload.joined_on,
+            ard_no=payload.ard_no, taluk_id=payload.taluk_id, joined_on=payload.joined_on,
         )
         db.add(member)
         await db.flush()
         db.add(AuditLog(
             actor_profile_id=actor.profile_id, actor_role=actor.role, action="MEMBER_CREATED",
             entity_type="member", entity_id=member.id,
-            after_data={"login_id": payload.login_id, "member_code": member.member_code, "taluk_id": str(payload.taluk_id)},
+            after_data={"login_id": payload.login_id, "member_code": member.member_code,
+                        "ard_no": member.ard_no, "taluk_id": str(payload.taluk_id)},
             request_id=request_id(request),
         ))
         await db.commit()
@@ -367,11 +369,13 @@ async def update_member(
     if duplicate:
         raise AppError("VERSION_CONFLICT", "Member code already exists.", 409)
     before = {
-        "member_code": member.member_code, "full_name": profile.full_name, "phone": profile.phone,
+        "member_code": member.member_code, "ard_no": member.ard_no,
+        "full_name": profile.full_name, "phone": profile.phone,
         "taluk_id": str(member.taluk_id), "joined_on": str(member.joined_on),
         "account_status": profile.account_status.value,
     }
     member.member_code = payload.member_code.upper()
+    member.ard_no = payload.ard_no
     member.taluk_id = payload.taluk_id
     member.joined_on = payload.joined_on
     profile.full_name = payload.full_name.strip()
@@ -380,7 +384,8 @@ async def update_member(
     db.add(AuditLog(
         actor_profile_id=actor.profile_id, actor_role=actor.role, action="MEMBER_UPDATED",
         entity_type="member", entity_id=member.id, before_data=before,
-        after_data={"member_code": member.member_code, "full_name": profile.full_name,
+        after_data={"member_code": member.member_code, "ard_no": member.ard_no,
+                    "full_name": profile.full_name,
                     "phone": profile.phone, "taluk_id": str(member.taluk_id),
                     "joined_on": str(member.joined_on), "account_status": profile.account_status.value,
                     "reason": payload.reason},

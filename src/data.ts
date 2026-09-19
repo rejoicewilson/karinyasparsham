@@ -23,6 +23,7 @@ export interface CaseRecord {
 export interface MemberRecord {
   id: string
   code: string
+  ardNo?: string
   name: string
   phone: string
   taluk: string

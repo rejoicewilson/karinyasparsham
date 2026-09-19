@@ -33,15 +33,18 @@ from app.services.supabase_admin import create_auth_user, delete_auth_user  # no
 PHONE_PATTERN = re.compile(r"^[0-9]{10}$")
 
 
-def table_rows(path: Path) -> list[tuple[str, str, str]]:
-    rows: list[tuple[str, str, str]] = []
+def table_rows(path: Path) -> list[tuple[str, str | None, str, str]]:
+    rows: list[tuple[str, str | None, str, str]] = []
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         if not raw_line.strip().startswith("|"):
             continue
         columns = [item.strip() for item in raw_line.strip().strip("|").split("|")]
-        if len(columns) != 3 or columns[0].casefold() == "taluk" or set(columns[0]) <= {"-", ":"}:
+        if columns[0].casefold() == "taluk" or set(columns[0]) <= {"-", ":"}:
             continue
-        rows.append((columns[0], columns[1], columns[2]))
+        if len(columns) == 3:
+            rows.append((columns[0], None, columns[1], columns[2]))
+        elif len(columns) == 4:
+            rows.append((columns[0], columns[1] or None, columns[2], columns[3]))
     return rows
 
 
@@ -50,21 +53,24 @@ async def import_members(args: argparse.Namespace) -> None:
     rows = table_rows(source)
     if len(rows) != args.expected_count:
         raise SystemExit(f"Expected {args.expected_count} members, found {len(rows)}.")
-    if any(not name for _, name, _ in rows):
+    if any(not name for _, _, name, _ in rows):
         raise SystemExit("Every member must have a name.")
-    if any(not PHONE_PATTERN.fullmatch(phone) for _, _, phone in rows):
+    if any(not PHONE_PATTERN.fullmatch(phone) for _, _, _, phone in rows):
         raise SystemExit("Every phone number must contain exactly 10 digits.")
-    if any(taluk.casefold() != args.taluk.casefold() for taluk, _, _ in rows):
+    if any(ard_no is not None and not ard_no.isdigit() for _, ard_no, _, _ in rows):
+        raise SystemExit("Every ARD number must contain digits only.")
+    if any(taluk.casefold() != args.taluk.casefold() for taluk, _, _, _ in rows):
         raise SystemExit(f"Every source row must belong to {args.taluk}.")
 
     records = [
         {
             "member_code": f"{args.code_prefix}-M{index:03d}",
             "login_id": f"mem-{args.login_prefix}-{index:03d}",
+            "ard_no": ard_no,
             "full_name": name,
             "phone": phone,
         }
-        for index, (_, name, phone) in enumerate(rows, start=1)
+        for index, (_, ard_no, name, phone) in enumerate(rows, start=1)
     ]
 
     async with SessionFactory() as db:
@@ -112,9 +118,10 @@ async def import_members(args: argparse.Namespace) -> None:
             raise SystemExit("Existing login IDs and member codes do not form matching import records.")
         expected_by_login = {record["login_id"].casefold(): record for record in records}
         mismatches: list[str] = []
+        ard_updates: list[tuple[Member, dict[str, str | None]]] = []
         for profile, member, permanent_account_id in existing_rows:
             expected = expected_by_login[str(profile.login_id).casefold()]
-            valid = (
+            base_valid = (
                 str(member.member_code).casefold() == expected["member_code"].casefold()
                 and profile.full_name == expected["full_name"]
                 and profile.phone == expected["phone"]
@@ -124,7 +131,13 @@ async def import_members(args: argparse.Namespace) -> None:
                 and member.joined_on == args.joined_on
                 and permanent_account_id is not None
             )
-            if not valid:
+            if not base_valid:
+                mismatches.append(expected["login_id"])
+            elif member.ard_no == expected["ard_no"]:
+                continue
+            elif member.ard_no is None and expected["ard_no"] is not None:
+                ard_updates.append((member, expected))
+            else:
                 mismatches.append(expected["login_id"])
         if mismatches:
             raise SystemExit(
@@ -139,12 +152,30 @@ async def import_members(args: argparse.Namespace) -> None:
             "source_members": len(records),
             "already_present": len(records) - len(pending),
             "to_create": len(pending),
+            "ard_numbers": sum(record["ard_no"] is not None for record in records),
+            "ard_to_update": len(ard_updates),
             "shared_phone_rows": len(records) - len({record["phone"] for record in records}),
             "taluk": args.taluk,
             "joined_on": args.joined_on.isoformat(),
         }, indent=2))
         if not args.apply:
             return
+
+        for member, record in ard_updates:
+            member.ard_no = record["ard_no"]
+            db.add(AuditLog(
+                actor_profile_id=admin.id,
+                actor_role=admin.role,
+                action="MEMBER_ARD_NUMBER_ADDED",
+                entity_type="member",
+                entity_id=member.id,
+                before_data={"ard_no": None},
+                after_data={"ard_no": record["ard_no"]},
+                request_id=uuid.uuid4(),
+                metadata={"source": "approved_member_import"},
+            ))
+        if ard_updates:
+            await db.commit()
 
         credentials: list[dict[str, str]] = []
         for position, record in enumerate(pending, start=1):
@@ -168,6 +199,7 @@ async def import_members(args: argparse.Namespace) -> None:
                 member = Member(
                     profile_id=profile.id,
                     member_code=record["member_code"],
+                    ard_no=record["ard_no"],
                     taluk_id=taluk.id,
                     joined_on=args.joined_on,
                 )
@@ -182,6 +214,7 @@ async def import_members(args: argparse.Namespace) -> None:
                     after_data={
                         "login_id": record["login_id"],
                         "member_code": record["member_code"],
+                        "ard_no": record["ard_no"],
                         "taluk_id": str(taluk.id),
                         "joined_on": args.joined_on.isoformat(),
                     },

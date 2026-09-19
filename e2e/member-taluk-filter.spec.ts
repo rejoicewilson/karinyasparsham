@@ -10,7 +10,7 @@ const profile = {
 }
 
 const members = [
-  { id: '1', member_code: 'KSD-M001', full_name: 'Kasargod Active', phone: '9000000001', taluk_name: 'Kasargod', taluk_id: 'ksd', membership_type: 'REGULAR', account_status: 'ACTIVE' },
+  { id: '1', member_code: 'KSD-M001', ard_no: '2469002', full_name: 'Kasargod Active', phone: '9000000001', taluk_name: 'Kasargod', taluk_id: 'ksd', membership_type: 'REGULAR', account_status: 'ACTIVE' },
   { id: '2', member_code: 'KSD-M002', full_name: 'Kasargod Inactive', phone: '9000000002', taluk_name: 'Kasargod', taluk_id: 'ksd', membership_type: 'REGULAR', account_status: 'INACTIVE' },
   { id: '3', member_code: 'KSD-03-M001', full_name: 'Vellarikundu Active', phone: '9000000003', taluk_name: 'Vellarikundu', taluk_id: 'ksd-03', membership_type: 'REGULAR', account_status: 'ACTIVE' },
 ].map(item => ({
@@ -74,6 +74,10 @@ test('administrator filters members and counts by taluk on mobile', async ({ pag
   expect(Math.abs(talukBox!.height - addMemberBox!.height)).toBeLessThanOrEqual(1)
 
   await expect(page.getByRole('button', { name: 'Active (2)' })).toBeVisible()
+  await page.getByPlaceholder('Search name, member code, ARD or phone').fill('2469002')
+  await expect(page.getByText('Kasargod Active')).toBeVisible()
+  await expect(page.getByText('Vellarikundu Active')).toHaveCount(0)
+  await page.getByPlaceholder('Search name, member code, ARD or phone').fill('')
   await page.getByLabel('Filter members by taluk').selectOption('Vellarikundu')
   const summary = page.getByRole('region', { name: 'Vellarikundu financial summary' })
   await expect(summary.getByText('Death cases')).toBeVisible()

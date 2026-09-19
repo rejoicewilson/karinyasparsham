@@ -165,6 +165,7 @@ class MemberCreate(BaseModel):
     login_id: str = Field(min_length=2, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
     temporary_password: SecretStr = Field(min_length=8, max_length=256)
     member_code: str = Field(min_length=2, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
+    ard_no: str | None = Field(default=None, max_length=30, pattern=r"^[0-9]+$")
     full_name: str = Field(min_length=2, max_length=180)
     phone: str | None = Field(default=None, max_length=30)
     taluk_id: uuid.UUID
@@ -199,6 +200,7 @@ class MemberUpdate(BaseModel):
     expected_version: int = Field(ge=1)
     profile_expected_version: int = Field(ge=1)
     member_code: str = Field(min_length=2, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
+    ard_no: str | None = Field(default=None, max_length=30, pattern=r"^[0-9]+$")
     full_name: str = Field(min_length=2, max_length=180)
     phone: str | None = Field(default=None, max_length=30)
     taluk_id: uuid.UUID
