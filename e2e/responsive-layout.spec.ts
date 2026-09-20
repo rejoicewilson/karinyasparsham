@@ -26,6 +26,17 @@ const profile = {
   must_change_password: false,
 }
 
+const agent = {
+  id: '00000000-0000-4000-8000-000000000200',
+  login_id: 'agent-test',
+  full_name: 'Test Agent',
+  phone: '9447000000',
+  account_status: 'ACTIVE',
+  version: 1,
+  taluk_id: taluks[0].id,
+  taluk_name: taluks[0].name,
+}
+
 async function mockAdminWorkspace(page: Page) {
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -40,7 +51,7 @@ async function mockAdminWorkspace(page: Page) {
             collections: [],
             deposits: [],
             taluks,
-            agents: [],
+            agents: [agent],
             bank_accounts: [],
             notifications: [],
             case_whatsapp_tracking: [],
@@ -49,6 +60,17 @@ async function mockAdminWorkspace(page: Page) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data }) })
   })
 }
+
+test('Organization no longer exposes bank configuration', async ({ page }) => {
+  await page.setViewportSize({ width: 1365, height: 707 })
+  await mockAdminWorkspace(page)
+  await page.goto('/admin/taluks')
+
+  await expect(page.getByRole('button', { name: 'Taluk', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Bank', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Bank account', { exact: true })).toHaveCount(0)
+  await expect(page.getByTitle('Replace bank account')).toHaveCount(0)
+})
 
 for (const viewport of [
   { name: 'windows-fullscreen', width: 1365, height: 707 },

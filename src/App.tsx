@@ -927,33 +927,16 @@ function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onCh
 type SetupKind = 'taluk' | 'agent' | 'bank' | 'member'
 
 function TaluksPage({ reload, notify }: { reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
-  const { taluks, agents, bankAccounts } = useAppData()
+  const { taluks, agents } = useAppData()
   const [query, setQuery] = useState('')
   const [setup, setSetup] = useState<SetupKind | null>(null)
   const [editingTaluk, setEditingTaluk] = useState<Record<string, any> | null>(null)
-  const [replacingBank, setReplacingBank] = useState<Record<string, any> | null>(null)
   const [editingAgent, setEditingAgent] = useState<Record<string, any> | null>(null)
   const term = query.trim().toLowerCase()
   const visibleTaluks = taluks.filter(item => !term || String(item.name).toLowerCase().includes(term) || String(item.code).toLowerCase().includes(term) || String(item.agent_name || '').toLowerCase().includes(term))
   const visibleAgents = agents.filter(item => !term || String(item.full_name).toLowerCase().includes(term) || String(item.login_id).toLowerCase().includes(term) || String(item.taluk_name || '').toLowerCase().includes(term))
-  const bankForTaluk = (taluk: Record<string, any>) => bankAccounts.find(item => String(item.taluk_id) === String(taluk.id))
-  const replaceBank = (taluk: Record<string, any>) => {
-    const bank = bankForTaluk(taluk)
-    if (!taluk.bank_account_id && !bank) return
-    setReplacingBank({
-      ...taluk,
-      bank_account_id: taluk.bank_account_id || bank?.id,
-      agent_profile_id: taluk.agent_profile_id || bank?.agent_profile_id,
-      bank_name: taluk.bank_name || bank?.bank_name,
-      bank_last4: taluk.bank_last4 || bank?.last4,
-      bank_branch_name: taluk.bank_branch_name || bank?.branch_name,
-      bank_account_holder_name: taluk.bank_account_holder_name || bank?.account_holder_name,
-      bank_ifsc_code: taluk.bank_ifsc_code || bank?.ifsc_code,
-    })
-  }
   const organizationReady = taluks.length > 0 && agents.length > 0
   const canAddAgent = taluks.some(item => !item.agent_name)
-  const canAddBank = agents.some(agent => !taluks.find(item => String(item.id) === String(agent.taluk_id))?.bank_name)
   const steps: { kind: 'taluk' | 'agent'; title: string; detail: string; complete: boolean; enabled: boolean }[] = [
     { kind: 'taluk', title: 'Taluks', detail: `${taluks.length} configured`, complete: taluks.length > 0, enabled: true },
     { kind: 'agent', title: 'Agents', detail: `${agents.length} assigned`, complete: agents.length > 0, enabled: taluks.length > 0 },
@@ -963,13 +946,12 @@ function TaluksPage({ reload, notify }: { reload: () => Promise<void>; notify: (
       <div className="setup-heading"><div><span>Initial setup</span><h2>Organization setup</h2></div><small>Complete in order</small></div>
       <div className="setup-steps">{steps.map((step, index) => <article className={step.complete ? 'complete' : ''} key={step.kind}><div className="setup-number">{step.complete ? <Check /> : index + 1}</div><div><strong>{step.title}</strong><span>{step.detail}</span></div><button className="secondary" disabled={!step.enabled} onClick={() => setSetup(step.kind)}><Plus /> Add</button></article>)}</div>
     </section>}
-    <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search taluk or agent" />{organizationReady && <div className="organization-actions"><button className="secondary" onClick={() => setSetup('taluk')}><Plus /> Taluk</button><button className="secondary" disabled={!canAddAgent} title={canAddAgent ? 'Add collection agent' : 'Add an unassigned taluk first'} onClick={() => setSetup('agent')}><UserRound /> Agent</button><button className="primary" disabled={!canAddBank} title={canAddBank ? 'Configure bank account' : 'Every assigned agent already has a bank'} onClick={() => setSetup('bank')}><Landmark /> Bank</button></div>}</div>
-    {visibleTaluks.length ? <div className="organization-grid">{visibleTaluks.map(item => <article key={String(item.id)}><div className="org-head"><div className="org-code">{String(item.code)}</div><div className="org-actions"><button className="icon-btn" title="Edit taluk" onClick={() => setEditingTaluk(item)}><Pencil /></button><button className="icon-btn" title="Replace bank account" disabled={!item.bank_account_id && !bankForTaluk(item)} onClick={() => replaceBank(item)}><Landmark /></button></div></div><h3>{String(item.name)} Taluk</h3><dl><div><dt>Active agent</dt><dd>{String(item.agent_name || 'Not assigned')}</dd></div><div><dt>Bank account</dt><dd>{item.bank_name ? `${item.bank_name} •••• ${item.bank_last4 || ''}` : 'Not configured'}</dd></div><div><dt>Active members</dt><dd><Users />{Number(item.member_count || 0)}</dd></div></dl></article>)}</div> : <div className="empty-review"><Landmark /><h3>No taluks found</h3><p>Try another taluk code, name, or agent.</p></div>}
+    <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search taluk or agent" />{organizationReady && <div className="organization-actions"><button className="secondary" onClick={() => setSetup('taluk')}><Plus /> Taluk</button><button className="primary" disabled={!canAddAgent} title={canAddAgent ? 'Add collection agent' : 'Add an unassigned taluk first'} onClick={() => setSetup('agent')}><UserRound /> Agent</button></div>}</div>
+    {visibleTaluks.length ? <div className="organization-grid">{visibleTaluks.map(item => <article key={String(item.id)}><div className="org-head"><div className="org-code">{String(item.code)}</div><div className="org-actions"><button className="icon-btn" title="Edit taluk" onClick={() => setEditingTaluk(item)}><Pencil /></button></div></div><h3>{String(item.name)} Taluk</h3><dl><div><dt>Active agent</dt><dd>{String(item.agent_name || 'Not assigned')}</dd></div><div><dt>Active members</dt><dd><Users />{Number(item.member_count || 0)}</dd></div></dl></article>)}</div> : <div className="empty-review"><Landmark /><h3>No taluks found</h3><p>Try another taluk code, name, or agent.</p></div>}
     <SectionHeading title="Collection agents" />
     {visibleAgents.length ? <div className="settings-list agent-admin-list">{visibleAgents.map(agent => <button key={String(agent.id)} onClick={() => setEditingAgent(agent)}><UserRound /><span><strong>{String(agent.full_name)}</strong><small>{String(agent.login_id)} · {String(agent.taluk_name || 'Unassigned')} · {titleCase(String(agent.account_status))}</small></span><Pencil /></button>)}</div> : <p className="subtle">No matching collection agents.</p>}
     {setup && <InitialSetupModal kind={setup} onClose={() => setSetup(null)} reload={reload} notify={notify} />}
     {editingTaluk && <EditTalukModal taluk={editingTaluk} onClose={() => setEditingTaluk(null)} reload={reload} notify={notify} />}
-    {replacingBank && <ReplaceBankModal taluk={replacingBank} onClose={() => setReplacingBank(null)} reload={reload} notify={notify} />}
     {editingAgent && <EditAgentModal agent={editingAgent} onClose={() => setEditingAgent(null)} reload={reload} notify={notify} />}
   </div>
 }
@@ -988,7 +970,7 @@ function EditAgentModal({ agent, onClose, reload, notify }: { agent: Record<stri
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Agent could not be updated.') }
     finally { setSubmitting(false) }
   }
-  return <Modal title="Edit collection agent" onClose={onClose}><form className="modal-form" onSubmit={submit}><section className="profile-data"><span>Login ID</span><strong>{String(agent.login_id)}</strong></section><div className="form-grid"><label>Full name<input name="full_name" required minLength={2} defaultValue={String(agent.full_name)} /></label><label>Phone<input name="phone" inputMode="tel" defaultValue={String(agent.phone || '')} /></label></div><div className="form-grid"><label>Account status<select value={statusValue} onChange={event => { const value = event.target.value; setStatusValue(value); if (value !== 'ACTIVE') setTalukId('') }}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option value="LOCKED">Locked</option></select></label><label>Taluk assignment<select value={talukId} onChange={event => setTalukId(event.target.value)} disabled={statusValue !== 'ACTIVE'}><option value="">Unassigned</option>{availableTaluks.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.name)}</option>)}</select></label></div>{talukId !== String(agent.taluk_id || '') && <p className="audit-note"><ShieldCheck /> Changing assignment ends the previous taluk bank configuration. Configure the destination bank afterward.</p>}<label>Reason for change<textarea name="reason" required minLength={3} maxLength={500} rows={2} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? 'Saving…' : 'Save changes'}</button></div></form></Modal>
+  return <Modal title="Edit collection agent" onClose={onClose}><form className="modal-form" onSubmit={submit}><section className="profile-data"><span>Login ID</span><strong>{String(agent.login_id)}</strong></section><div className="form-grid"><label>Full name<input name="full_name" required minLength={2} defaultValue={String(agent.full_name)} /></label><label>Phone<input name="phone" inputMode="tel" defaultValue={String(agent.phone || '')} /></label></div><div className="form-grid"><label>Account status<select value={statusValue} onChange={event => { const value = event.target.value; setStatusValue(value); if (value !== 'ACTIVE') setTalukId('') }}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option value="LOCKED">Locked</option></select></label><label>Taluk assignment<select value={talukId} onChange={event => setTalukId(event.target.value)} disabled={statusValue !== 'ACTIVE'}><option value="">Unassigned</option>{availableTaluks.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.name)}</option>)}</select></label></div>{talukId !== String(agent.taluk_id || '') && <p className="audit-note"><ShieldCheck /> Changing this value ends the current taluk assignment and creates a new assignment.</p>}<label>Reason for change<textarea name="reason" required minLength={3} maxLength={500} rows={2} /></label>{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting}>{submitting ? 'Saving…' : 'Save changes'}</button></div></form></Modal>
 }
 
 function EditTalukModal({ taluk, onClose, reload, notify }: { taluk: Record<string, any>; onClose: () => void; reload: () => Promise<void>; notify: (message: string, tone?: Toast['tone']) => void }) {
