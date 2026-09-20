@@ -76,6 +76,9 @@ export const authApi = {
 
 export const workspaceApi = {
   load: () => apiRequest<Workspace>('/workspace'),
+  createAdminCollectionBatch: (payload: Record<string, unknown>) => apiRequest<Record<string, any>>('/admin/collection-batches', {
+    method: 'POST', body: JSON.stringify(payload)
+  }),
   recordCollection: (payload: Record<string, unknown>) => apiRequest('/agent/collections', {
     method: 'POST', body: JSON.stringify(payload)
   }),

@@ -3,7 +3,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.main import app
-from app.schemas.api import MemberCreate
+from app.schemas.api import AdminCollectionBatchCreate, MemberCreate
 
 
 client = TestClient(app)
@@ -34,6 +34,7 @@ def test_protected_endpoint_requires_authentication():
 def test_handover_endpoints_require_authentication():
     assert client.get("/api/v1/agent/handovers").status_code == 401
     assert client.get("/api/v1/admin/handovers").status_code == 401
+    assert client.post("/api/v1/admin/collection-batches", json={}).status_code == 401
 
 
 def test_member_ard_number_is_optional_and_digits_only():
@@ -50,3 +51,24 @@ def test_member_ard_number_is_optional_and_digits_only():
     assert MemberCreate(**common, ard_no="2469002").ard_no == "2469002"
     with pytest.raises(ValidationError):
         MemberCreate(**common, ard_no="ARD-2469002")
+
+
+def test_admin_collection_batch_requires_timezone_and_entries():
+    common = {
+        "client_request_id": "00000000-0000-4000-8000-000000000010",
+        "agent_profile_id": "00000000-0000-4000-8000-000000000011",
+        "declared_amount": "100.00",
+        "received_at": "2026-09-20T10:30:00+05:30",
+        "entries": [{
+            "member_id": "00000000-0000-4000-8000-000000000012",
+            "collection_type": "DEATH_CONTRIBUTION",
+            "case_obligation_id": "00000000-0000-4000-8000-000000000013",
+            "amount": "100.00",
+            "method": "CASH",
+        }],
+    }
+    assert AdminCollectionBatchCreate(**common).declared_amount == 100
+    with pytest.raises(ValidationError):
+        AdminCollectionBatchCreate(**{**common, "received_at": "2026-09-20T10:30:00"})
+    with pytest.raises(ValidationError):
+        AdminCollectionBatchCreate(**{**common, "entries": []})

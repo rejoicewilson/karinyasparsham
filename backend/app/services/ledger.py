@@ -32,7 +32,7 @@ from app.models.domain import (
     Profile,
     UserRole,
 )
-from app.schemas.api import CollectionCreate, DeathCaseCreate, DepositCreate
+from app.schemas.api import AdminCollectionBatchCreate, CollectionCreate, DeathCaseCreate, DepositCreate
 from app.services.rules import default_case_amount, eligibility_cutoff_for_case, sequence_month
 
 
@@ -297,6 +297,147 @@ async def record_collection(
     await db.commit()
     await db.refresh(collection)
     return collection
+
+
+async def record_admin_collection_batch(
+    db: AsyncSession,
+    actor: CurrentActor,
+    payload: AdminCollectionBatchCreate,
+    request_id: uuid.UUID,
+) -> DepositBatch:
+    batch_id = uuid.uuid5(uuid.NAMESPACE_URL, f"admin-collection:{payload.client_request_id}")
+    existing = await db.get(DepositBatch, batch_id)
+    if existing:
+        return existing
+
+    assignment = await db.scalar(
+        select(AgentTalukAssignment).where(
+            AgentTalukAssignment.agent_profile_id == payload.agent_profile_id,
+            AgentTalukAssignment.ends_at.is_(None),
+        )
+    )
+    agent = await db.scalar(
+        select(Profile).where(
+            Profile.id == payload.agent_profile_id,
+            Profile.role == UserRole.AGENT,
+            Profile.account_status == AccountStatus.ACTIVE,
+        )
+    )
+    if assignment is None or agent is None:
+        raise AppError("FORBIDDEN_RESOURCE", "An active assigned agent is required.", 404)
+
+    total = sum((entry.amount for entry in payload.entries), Decimal("0"))
+    if total != payload.declared_amount:
+        raise AppError(
+            "COLLECTION_TOTAL_MISMATCH",
+            "The received amount must equal the selected collection total.",
+            409,
+            {"calculated_total": str(total)},
+        )
+
+    now = datetime.now(timezone.utc)
+    collections: list[CollectionTransaction] = []
+    affected_members: set[uuid.UUID] = set()
+    for index, entry in enumerate(payload.entries):
+        target = None
+        if entry.collection_type == CollectionType.DEATH_CONTRIBUTION:
+            if not entry.case_obligation_id or entry.permanent_account_id:
+                raise AppError("VALIDATION_ERROR", "A death-case obligation is required.", 422)
+            target = await db.scalar(
+                select(CaseObligation).where(
+                    CaseObligation.id == entry.case_obligation_id,
+                    CaseObligation.member_id == entry.member_id,
+                    CaseObligation.taluk_id_snapshot == assignment.taluk_id,
+                ).with_for_update()
+            )
+            remaining = target.required_amount - target.collected_amount if target else Decimal("0")
+        else:
+            if not entry.permanent_account_id or entry.case_obligation_id:
+                raise AppError("VALIDATION_ERROR", "A permanent-membership account is required.", 422)
+            target = await db.scalar(
+                select(PermanentMembershipAccount)
+                .join(Member, Member.id == PermanentMembershipAccount.member_id)
+                .where(
+                    PermanentMembershipAccount.id == entry.permanent_account_id,
+                    PermanentMembershipAccount.member_id == entry.member_id,
+                    Member.taluk_id == assignment.taluk_id,
+                ).with_for_update(of=PermanentMembershipAccount)
+            )
+            remaining = target.target_amount - target.collected_amount if target else Decimal("0")
+        if target is None:
+            raise AppError("FORBIDDEN_RESOURCE", "A collection target was not found in the agent's taluk.", 404)
+        if entry.amount > remaining:
+            raise AppError(
+                "COLLECTION_EXCEEDS_BALANCE", "Collection amount exceeds the available balance.", 409,
+                {"remaining_amount": str(remaining)},
+            )
+
+        target.collected_amount += entry.amount
+        target.verified_amount += entry.amount
+        if isinstance(target, PermanentMembershipAccount) and target.verified_amount == target.target_amount and target.achieved_at is None:
+            target.achieved_at = now
+            member = await db.scalar(select(Member).where(Member.id == target.member_id).with_for_update())
+            member.membership_type = MembershipType.PERMANENT
+            member.permanent_since = now
+
+        collection = CollectionTransaction(
+            receipt_number=_reference("RC"), collection_type=entry.collection_type,
+            member_id=entry.member_id, agent_profile_id=agent.id, taluk_id=assignment.taluk_id,
+            case_obligation_id=entry.case_obligation_id, permanent_account_id=entry.permanent_account_id,
+            amount=entry.amount, method=entry.method,
+            external_reference=entry.external_reference or payload.reference,
+            note=entry.note or payload.note, collected_at=payload.received_at,
+            status=CollectionStatus.VERIFIED, created_by=actor.profile_id,
+            client_request_id=uuid.uuid5(payload.client_request_id, f"entry:{index}"),
+        )
+        db.add(collection)
+        await db.flush()
+        collections.append(collection)
+        affected_members.add(entry.member_id)
+
+    batch = DepositBatch(
+        id=batch_id, deposit_number=_reference("COL"), agent_profile_id=agent.id,
+        taluk_id=assignment.taluk_id, bank_account_id=None, bank_snapshot={},
+        calculated_total=total, declared_deposit_amount=payload.declared_amount,
+        deposited_at=payload.received_at, bank_reference=payload.reference,
+        agent_message=payload.note, status=DepositStatus.APPROVED,
+        submitted_at=now, reviewed_by=actor.profile_id, reviewed_at=now,
+    )
+    db.add(batch)
+    await db.flush()
+    for collection in collections:
+        db.add(DepositItem(
+            deposit_batch_id=batch.id, collection_transaction_id=collection.id,
+            amount_snapshot=collection.amount,
+        ))
+
+    profiles = (await db.execute(
+        select(Member.id, Member.profile_id).where(Member.id.in_(affected_members))
+    )).all()
+    for member_id, profile_id in profiles:
+        member_total = sum(item.amount for item in collections if item.member_id == member_id)
+        event = NotificationEvent(
+            type=NotificationType.PAYMENT_VERIFIED, title="Payment verified",
+            body_template=f"INR {member_total:.2f} has been verified.",
+            template_data={"deposit_id": str(batch.id), "amount": str(member_total)},
+            deep_link=f"/member/payments?deposit={batch.id}",
+            related_entity_type="deposit_batch", related_entity_id=batch.id,
+        )
+        db.add(event)
+        await db.flush()
+        recipient = NotificationRecipient(event_id=event.id, profile_id=profile_id)
+        db.add(recipient)
+        await db.flush()
+        db.add(NotificationOutbox(recipient_id=recipient.id))
+
+    await _audit(
+        db, actor, request_id, "ADMIN_COLLECTION_BATCH_VERIFIED", "deposit_batch", batch.id,
+        after={"batch_number": batch.deposit_number, "agent_profile_id": str(agent.id),
+               "taluk_id": str(assignment.taluk_id), "total": str(total), "items": len(collections)},
+    )
+    await db.commit()
+    await db.refresh(batch)
+    return batch
 
 
 async def create_deposit(

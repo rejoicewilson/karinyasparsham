@@ -135,7 +135,7 @@ function mapWorkspace(raw: Workspace) {
 const pageTitles: Record<string, string> = {
   dashboard: 'Overview', cases: 'Death cases', dues: 'Outstanding', payments: 'Payment history',
   permanent: 'Account', notifications: 'Notifications', account: 'Account',
-  collect: 'Collections', handovers: 'Handovers', deposits: 'Handovers', members: 'Members', reports: 'Reports',
+  collect: 'Payments', handovers: 'Payments', deposits: 'Payments', members: 'Members', reports: 'Reports',
   taluks: 'Organization'
 }
 
@@ -291,13 +291,13 @@ const navByRole: Record<Role, NavItem[]> = {
     { key: 'account', label: 'Account', icon: UserRound }
   ],
   agent: [
-    { key: 'dashboard', label: 'Home', icon: Home }, { key: 'collect', label: 'Collections', icon: IndianRupee },
-    { key: 'handovers', label: 'Handovers', icon: WalletCards }, { key: 'members', label: 'Members', icon: Users },
+    { key: 'dashboard', label: 'Home', icon: Home }, { key: 'cases', label: 'Cases', icon: HeartHandshake },
+    { key: 'handovers', label: 'Payments', icon: Receipt }, { key: 'members', label: 'Members', icon: Users },
     { key: 'account', label: 'Account', icon: UserRound }
   ],
   admin: [
     { key: 'dashboard', label: 'Overview', icon: Home }, { key: 'cases', label: 'Death cases', icon: HeartHandshake },
-    { key: 'handovers', label: 'Handover review', icon: FileCheck2 }, { key: 'members', label: 'Members', icon: Users },
+    { key: 'handovers', label: 'Collections', icon: FileCheck2 }, { key: 'members', label: 'Members', icon: Users },
     { key: 'taluks', label: 'Organization', icon: Landmark }, { key: 'reports', label: 'Reports', icon: ListChecks }
   ]
 }
@@ -353,8 +353,7 @@ function RoleRouter(props: {
     return <MemberDashboard session={props.session} />
   }
   if (props.role === 'agent') {
-    if (section === 'collect') return <AgentCollections online={props.online} collections={props.collections} setCollections={props.setCollections} notify={props.notify} reload={props.reload} />
-    if (section === 'handovers' || section === 'deposits') return <AgentDeposits online={props.online} collections={props.collections} setCollections={props.setCollections} deposits={props.deposits} setDeposits={props.setDeposits} notify={props.notify} reload={props.reload} session={props.session} />
+    if (section === 'collect' || section === 'handovers' || section === 'deposits') return <AgentPayments collections={props.collections} deposits={props.deposits} session={props.session} />
     if (section === 'members' && detail) return <MemberDetail id={detail} collections={props.collections} />
     if (section === 'members') return <MembersPage role="agent" />
     if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
@@ -409,11 +408,29 @@ function AgentDashboard({ collections, deposits }: { collections: CollectionReco
       <Metric icon={WalletCards} label="Awaiting handover" value={<Money value={unbatched} />} tone="amber" />
       <Metric icon={Clock3} label="Awaiting receipt" value={String(deposits.filter(d => d.status === 'Submitted').length)} tone="blue" />
     </section>
-    <button className="primary action-wide" onClick={() => navigate('/agent/collect')}><IndianRupee /> Record payment <ArrowRight /></button>
+    <section className="readonly-banner"><ShieldCheck /><div><strong>View-only access</strong><span>Collection entries are recorded and verified by the administrator.</span></div></section>
     <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
     <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agent key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
-    <SectionHeading title="Handover status" action="All handovers" onAction={() => navigate('/agent/handovers')} />
+    <SectionHeading title="Payment history" action="View all" onAction={() => navigate('/agent/handovers')} />
     <div className="list-surface">{deposits.slice(0, 2).map(d => <DepositRow key={d.id} deposit={d} />)}</div>
+  </div>
+}
+
+function AgentPayments({ collections, deposits, session }: { collections: CollectionRecord[]; deposits: DepositRecord[]; session: Session }) {
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'All' | 'Verified' | 'Awaiting'>('All')
+  const term = query.trim().toLowerCase()
+  const visible = collections.filter(item => {
+    const matchesStatus = filter === 'All' || (filter === 'Verified' ? item.status === 'Verified' : item.status !== 'Verified')
+    return matchesStatus && (!term || item.member.toLowerCase().includes(term) || item.label.toLowerCase().includes(term) || item.receipt.toLowerCase().includes(term))
+  })
+  const ownBatches = deposits.filter(item => item.agent === session.name)
+  return <div className="page-stack">
+    <section className="readonly-banner"><ShieldCheck /><div><strong>Payment records</strong><span>These records are maintained by the administrator and cannot be changed from an agent account.</span></div></section>
+    <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search member, case, or receipt" /></div>
+    <div className="filter-row">{(['All', 'Verified', 'Awaiting'] as const).map(value => <button key={value} className={`chip ${filter === value ? 'active' : ''}`} onClick={() => setFilter(value)}>{value}</button>)}</div>
+    {visible.length ? <div className="payment-list">{visible.map(item => <article key={item.id}><div className={`payment-icon ${item.status.toLowerCase()}`}>{item.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{item.member}</strong><span>{item.label} · {item.receipt}</span><small>{item.method} · {item.date}</small></div><div><strong><Money value={item.amount} /></strong><Status value={item.status === 'Verified' ? 'Verified' : 'Awaiting Verification'} /></div></article>)}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Payment records entered by the administrator will appear here.</p></div>}
+    {ownBatches.length > 0 && <><SectionHeading title="Historical handovers" /><div className="list-surface deposits-full">{ownBatches.map(item => <DepositRow key={item.id} deposit={item} />)}</div></>}
   </div>
 }
 
@@ -434,7 +451,7 @@ function AdminDashboard({ deposits }: { deposits: DepositRecord[] }) {
       <Metric icon={IndianRupee} label="Outstanding dues" value={<Money value={members.reduce((sum, item) => sum + item.pending, 0)} />} detail={`${taluks.length} taluks`} tone="blue" />
     </section>
     <div className="admin-columns">
-      <section><SectionHeading title="Handover review queue" action="Review all" onAction={() => navigate('/admin/handovers')} /><div className="list-surface">{deposits.filter(d => d.status === 'Submitted').map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => navigate('/admin/handovers')} />)}</div></section>
+      <section><SectionHeading title="Collection records" action="View all" onAction={() => navigate('/admin/handovers')} /><div className="list-surface">{deposits.slice(0, 5).map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => navigate('/admin/handovers')} />)}</div></section>
       <section><SectionHeading title="Taluk collection progress" action="View report" onAction={() => navigate('/admin/reports')} />{taluks.length ? <div className="taluk-progress">{taluks.map(item => { const total = talukTotals.get(String(item.id)); const percent = total?.required ? total.collected / total.required * 100 : 0; return <div key={String(item.id)}><div><strong>{String(item.name)}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No taluks have been configured.</p>}</section>
     </div>
     <SectionHeading title="Recent death cases" action="View register" onAction={() => navigate('/admin/cases')} />
@@ -687,6 +704,7 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
   const [selected, setSelected] = useState<DepositRecord | null>(null)
   const [filter, setFilter] = useState<'Submitted' | 'Approved' | 'Rejected'>('Submitted')
   const [reviewing, setReviewing] = useState(false)
+  const [recording, setRecording] = useState(false)
   const filteredDeposits = deposits.filter(deposit => deposit.status === filter)
   const selectedCollections = useMemo(
     () => selected ? collections.filter(collection => selected.collectionIds.includes(collection.id)) : [],
@@ -787,6 +805,7 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
     }
   }
   return <div className="page-stack">
+    <div className="toolbar collection-admin-toolbar"><div><h2 className="mobile-section-title">Collections</h2><p className="subtle">Record money received from a taluk agent and verify member balances.</p></div><button className="primary" disabled={!online} onClick={() => setRecording(true)}><Plus /> Record collection batch</button></div>
     <div className="filter-row">
       <button className={`chip ${filter === 'Submitted' ? 'active' : ''}`} onClick={() => selectFilter('Submitted')}>Pending ({deposits.filter(d => d.status === 'Submitted').length})</button>
       <button className={`chip ${filter === 'Approved' ? 'active' : ''}`} onClick={() => selectFilter('Approved')}>Received ({deposits.filter(d => d.status === 'Approved').length})</button>
@@ -831,6 +850,7 @@ function AdminDeposits({ deposits, setDeposits: _setDeposits, collections, setCo
         </> : <div className="empty-review"><FileCheck2 /><h3>{filteredDeposits.length ? `Select a ${filter === 'Approved' ? 'received' : filter.toLowerCase()} handover` : filterCopy.title}</h3><p>{filteredDeposits.length ? (filter === 'Submitted' ? 'Review the collection total, handed-over amount, note, and entries before deciding.' : 'Select a handover from the list to view its details.') : filterCopy.detail}</p></div>}
       </section>
     </div>
+    {recording && <AdminCollectionBatchModal onClose={() => setRecording(false)} onRecorded={async amount => { setRecording(false); setFilter('Approved'); setSelected(null); await reload(); notify(`${formatMoney(amount)} recorded and verified.`) }} />}
   </div>
 }
 
@@ -1086,6 +1106,70 @@ function CreateCaseModal({ onClose, onPublish }: { onClose: () => void; onPublis
     finally { setSubmitting(false) }
   }
   return <Modal title="Create death case" onClose={onClose}><form onSubmit={submit} className="modal-form"><label>Deceased member<select name="member_id" required defaultValue=""><option value="" disabled>Select active member</option>{members.filter(item => item.status === 'Active').map(item => <option value={item.id} key={item.id}>{item.code} — {item.name}</option>)}</select></label><label>Date of death<input name="death_date" type="date" required max={new Date().toISOString().slice(0, 10)} /></label><label>Case details<textarea name="details" required minLength={3} placeholder="Enter member-visible details" rows={3} /></label><label>Member photo<input name="photo" required type="file" accept="image/jpeg,image/png,image/webp" /></label>{preview && <section className="rate-preview"><div><span>Next monthly sequence</span><strong>Case {String(preview.next_sequence)}</strong></div><div><span>Default contribution</span><strong>{<Money value={Number(preview.default_amount)} />}</strong></div></section>}<label className="toggle-row"><span><strong>Override contribution amount</strong><small>A reason is required and will be audited.</small></span><input type="checkbox" checked={override} onChange={event => setOverride(event.target.checked)} /></label>{override && <div className="form-grid"><label>Contribution amount<input name="override_amount" type="number" min="1" step="0.01" required  onInput={normalizeMoneyInput} inputMode="decimal"/></label><label>Override reason<textarea name="override_reason" required minLength={3} rows={2} /></label></div>}{error && <p className="form-error"><AlertCircle />{error}</p>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting} type="submit">{submitting ? 'Publishing…' : 'Publish case'}</button></div></form></Modal>
+}
+
+function AdminCollectionBatchModal({ onClose, onRecorded }: { onClose: () => void; onRecorded: (amount: number) => void | Promise<void> }) {
+  const { agents, members } = useAppData()
+  const activeAgents = agents.filter(agent => agent.account_status === 'ACTIVE' && agent.taluk_id)
+  const [agentId, setAgentId] = useState(String(activeAgents[0]?.id || ''))
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<Record<string, number>>({})
+  const [method, setMethod] = useState<CollectionRecord['method']>('Cash')
+  const [reference, setReference] = useState('')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const agent = activeAgents.find(item => String(item.id) === agentId)
+  const talukMembers = members.filter(member => member.status === 'Active' && member.talukId === String(agent?.taluk_id))
+  const targets = talukMembers.flatMap(member => {
+    const obligations = (member.obligations || []).filter(item => item.available > 0).map(item => ({
+      key: `case:${item.id}`, member, label: item.label, available: item.available,
+      collection_type: 'DEATH_CONTRIBUTION', case_obligation_id: item.id, permanent_account_id: null,
+    }))
+    const permanentAvailable = member.permanentAccountId ? Math.max((member.permanentTarget || 0) - (member.permanentCollected || 0), 0) : 0
+    return permanentAvailable > 0 ? [...obligations, {
+      key: `permanent:${member.permanentAccountId}`, member, label: 'Permanent membership', available: permanentAvailable,
+      collection_type: 'PERMANENT_MEMBERSHIP', case_obligation_id: null, permanent_account_id: member.permanentAccountId || null,
+    }] : obligations
+  })
+  const visible = targets.filter(item => {
+    const term = query.trim().toLowerCase()
+    return !term || item.member.name.toLowerCase().includes(term) || item.member.code.toLowerCase().includes(term) || item.label.toLowerCase().includes(term)
+  })
+  const total = Object.values(selected).reduce((sum, amount) => sum + Number(amount || 0), 0)
+  const toggle = (key: string, available: number) => setSelected(current => {
+    const next = { ...current }
+    if (key in next) delete next[key]
+    else next[key] = available
+    return next
+  })
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setError('')
+    const entries = targets.filter(item => selected[item.key] > 0).map(item => ({
+      member_id: item.member.id, collection_type: item.collection_type,
+      case_obligation_id: item.case_obligation_id, permanent_account_id: item.permanent_account_id,
+      amount: selected[item.key], method: method.toUpperCase().replaceAll(' ', '_'),
+    }))
+    if (!agentId || !entries.length || total <= 0) { setError('Select an agent and at least one payment.'); return }
+    setSubmitting(true)
+    try {
+      await workspaceApi.createAdminCollectionBatch({
+        client_request_id: crypto.randomUUID(), agent_profile_id: agentId, entries,
+        declared_amount: total, received_at: new Date().toISOString(),
+        reference: reference.trim() || null, note: note.trim() || null,
+      })
+      await onRecorded(total)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Collection batch could not be recorded.') }
+    finally { setSubmitting(false) }
+  }
+  return <Modal title="Record collection batch" onClose={onClose} wide><form className="modal-form" onSubmit={submit}>
+    <section className="bank-destination"><ShieldCheck /><div><span>Administrator verification</span><strong>Record money received from the assigned agent</strong><small>Selected payments are verified immediately and added to member history.</small></div></section>
+    <div className="form-grid"><label>Collection agent<select required value={agentId} onChange={event => { setAgentId(event.target.value); setSelected({}) }}><option value="" disabled>Select agent</option>{activeAgents.map(item => <option value={String(item.id)} key={String(item.id)}>{String(item.full_name)} · {String(item.taluk_name || '')}</option>)}</select></label><label>Method<select value={method} onChange={event => setMethod(event.target.value as CollectionRecord['method'])}><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Other</option></select></label></div>
+    {agentId && <><SearchBox value={query} onChange={setQuery} placeholder="Search member, code, or case" /><div className="select-head"><span>{Object.keys(selected).length} payments selected</span><button type="button" onClick={() => setSelected({})}>Clear all</button></div><div className="collection-select admin-collection-select">{visible.map(item => <label key={item.key}><input type="checkbox" checked={item.key in selected} onChange={() => toggle(item.key, item.available)} /><span><strong>{item.member.name}</strong><small>{item.member.code} · {item.label}</small></span>{item.key in selected ? <input aria-label={`Amount for ${item.member.name} ${item.label}`} className="entry-amount" type="number" min="0.01" max={item.available} step="0.01" value={selected[item.key]} onChange={event => setSelected(current => ({ ...current, [item.key]: Number(event.target.value) }))} onInput={normalizeMoneyInput} /> : <b><Money value={item.available} /></b>}</label>)}</div>{!visible.length && <p className="subtle">No outstanding payments match this selection.</p>}</>}
+    <section className="calculated-total"><span>Amount received and verified</span><strong><Money value={total} /></strong></section>
+    <div className="form-grid"><label>Reference <span className="optional-label">Optional</span><input value={reference} onChange={event => setReference(event.target.value)} maxLength={500} placeholder="Receipt or acknowledgement" /></label><label>Note <span className="optional-label">Optional</span><input value={note} onChange={event => setNote(event.target.value)} maxLength={1000} placeholder="Cash count or collection details" /></label></div>
+    {error && <p className="form-error"><AlertCircle />{error}</p>}<div className="audit-note"><ShieldCheck /> The administrator is recorded as the verifier; the selected agent remains the physical collector.</div><div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={submitting || !agentId || total <= 0}>{submitting ? 'Recording…' : `Record ${formatMoney(total)}`}</button></div>
+  </form></Modal>
 }
 
 function CollectionModal({ initialMemberId, onClose, onRecord }: { initialMemberId?: string; onClose: () => void; onRecord: (memberId: string, type: string, amount: number, method: CollectionRecord['method']) => void | Promise<void> }) {

@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responses import success
 from app.core.database import get_db
+from app.core.errors import AppError
 from app.core.security import CurrentActor, require_role
 from app.models.domain import CollectionTransaction, DepositBatch, UserRole
 from app.schemas.api import CollectionCreate, DepositCreate, DepositSubmit
-from app.services.ledger import create_deposit, record_collection, submit_deposit
 
 
 router = APIRouter()
@@ -47,8 +47,7 @@ async def create_collection(
     actor: CurrentActor = Depends(agent_only),
     db: AsyncSession = Depends(get_db),
 ):
-    collection = await record_collection(db, actor, payload, request_id(request))
-    return success(request, collection)
+    raise AppError("AGENT_READ_ONLY", "Agent accounts are view-only. An administrator records collections.", 403)
 
 
 @router.get("/deposits")
@@ -77,8 +76,7 @@ async def create_deposit_batch(
     actor: CurrentActor = Depends(agent_only),
     db: AsyncSession = Depends(get_db),
 ):
-    batch = await create_deposit(db, actor, payload, request_id(request))
-    return success(request, batch)
+    raise AppError("AGENT_READ_ONLY", "Agent accounts are view-only. Handovers are no longer submitted by agents.", 403)
 
 
 @router.post("/deposits/{batch_id}/submit")
@@ -90,7 +88,4 @@ async def submit_deposit_batch(
     actor: CurrentActor = Depends(agent_only),
     db: AsyncSession = Depends(get_db),
 ):
-    batch = await submit_deposit(
-        db, actor, batch_id, payload.expected_version, request_id(request)
-    )
-    return success(request, batch)
+    raise AppError("AGENT_READ_ONLY", "Agent accounts are view-only. Handovers are no longer submitted by agents.", 403)

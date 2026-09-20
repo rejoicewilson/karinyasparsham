@@ -16,10 +16,10 @@ from app.models.domain import (
     DepositBatch, DepositStatus, Member, MonthlyCaseCounter, Profile, Taluk, UserRole,
 )
 from app.schemas.api import (
-    AgentCreate, AgentUpdate, BankAccountCreate, BankAccountReplace, DeathCaseCreate, DepositApprove, DepositReject,
+    AdminCollectionBatchCreate, AgentCreate, AgentUpdate, BankAccountCreate, BankAccountReplace, DeathCaseCreate, DepositApprove, DepositReject,
     DeathCaseWhatsAppStatusUpdate, MemberCreate, MemberUpdate, TalukCreate, TalukUpdate,
 )
-from app.services.ledger import publish_death_case, review_deposit
+from app.services.ledger import publish_death_case, record_admin_collection_batch, review_deposit
 from app.services.supabase_admin import create_auth_user, delete_auth_user, service_headers
 from app.services.rules import default_case_amount, sequence_month
 
@@ -639,6 +639,17 @@ async def list_deposits(
     if review_status is not None:
         query = query.where(DepositBatch.status == review_status)
     return success(request, (await db.scalars(query)).all())
+
+
+@router.post("/collection-batches", status_code=status.HTTP_201_CREATED)
+async def create_collection_batch(
+    payload: AdminCollectionBatchCreate,
+    request: Request,
+    actor: CurrentActor = Depends(admin_only),
+    db: AsyncSession = Depends(get_db),
+):
+    batch = await record_admin_collection_batch(db, actor, payload, request_id(request))
+    return success(request, batch)
 
 
 @router.post("/deposits/{batch_id}/approve")

@@ -111,6 +111,34 @@ class CollectionCreate(BaseModel):
         return value
 
 
+class AdminCollectionEntry(BaseModel):
+    member_id: uuid.UUID
+    collection_type: CollectionType
+    case_obligation_id: uuid.UUID | None = None
+    permanent_account_id: uuid.UUID | None = None
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    method: CollectionMethod
+    external_reference: str | None = Field(default=None, max_length=500)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class AdminCollectionBatchCreate(BaseModel):
+    client_request_id: uuid.UUID
+    agent_profile_id: uuid.UUID
+    entries: list[AdminCollectionEntry] = Field(min_length=1, max_length=500)
+    declared_amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    received_at: datetime
+    reference: str | None = Field(default=None, max_length=500)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("received_at")
+    @classmethod
+    def require_received_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("received_at must include a timezone offset")
+        return value
+
+
 class DepositCreate(BaseModel):
     collection_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
     declared_deposit_amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
