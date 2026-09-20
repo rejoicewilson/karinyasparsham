@@ -1073,11 +1073,48 @@ function InitialSetupModal({ kind, onClose, reload, notify }: { kind: SetupKind;
 }
 
 function ReportsPage() {
-  const { cases, members } = useAppData()
+  const { cases, members, taluks } = useAppData()
+  const [query, setQuery] = useState('')
   const collected = cases.reduce((sum, item) => sum + item.collected, 0), verified = cases.reduce((sum, item) => sum + item.verified, 0)
+  const talukTotals = cases.flatMap(item => item.talukProgress).reduce((totals, item) => {
+    const current = totals.get(item.id) || { required: 0, collected: 0, verified: 0 }
+    current.required += item.required; current.collected += item.collected; current.verified += item.verified
+    totals.set(item.id, current)
+    return totals
+  }, new Map<string, { required: number; collected: number; verified: number }>())
+  const talukRows = taluks.map(item => {
+    const totals = talukTotals.get(String(item.id)) || { required: 0, collected: 0, verified: 0 }
+    return {
+      id: String(item.id), name: String(item.name), district: String(item.district || 'Not specified'),
+      required: totals.required, collected: totals.collected, verified: totals.verified,
+      pending: Math.max(totals.required - totals.collected, 0),
+      percent: totals.required ? totals.collected / totals.required * 100 : 0,
+    }
+  }).sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name))
+  const term = query.trim().toLowerCase()
+  const visibleTaluks = talukRows.filter(item => !term || item.name.toLowerCase().includes(term) || item.district.toLowerCase().includes(term))
+  const totalRequired = talukRows.reduce((sum, item) => sum + item.required, 0)
+  const totalPending = talukRows.reduce((sum, item) => sum + item.pending, 0)
   const exportDues = () => downloadCsv(`outstanding-dues-${new Date().toISOString().slice(0, 10)}.csv`, [['Member code', 'Member name', 'Taluk', 'Pending amount'], ...members.map(item => [item.code, item.name, item.taluk, item.pending])])
   const exportCases = () => downloadCsv(`death-cases-${new Date().toISOString().slice(0, 10)}.csv`, [['Case number', 'Deceased member', 'Taluk', 'Death date', 'Status', 'Required', 'Collected', 'Verified'], ...cases.map(item => [item.caseNumber, item.name, item.taluk, item.deathDate, item.status, item.requiredTotal, item.collected, item.verified])])
-  return <div className="page-stack"><section className="report-banner"><div><span>All recorded collections</span><strong>{<Money value={collected} />}</strong><small>{<Money value={verified} />} verified</small></div></section><div className="report-list"><button onClick={exportDues}><IndianRupee /><span><strong>Outstanding dues</strong><small>{<Money value={members.reduce((sum, item) => sum + item.pending, 0)} />} across {members.length} members</small></span><Download /></button><button onClick={exportCases}><CalendarDays /><span><strong>Death cases</strong><small>{cases.length} records</small></span><Download /></button></div></div>
+  const exportTaluks = () => downloadCsv(`taluk-collection-performance-${new Date().toISOString().slice(0, 10)}.csv`, [['Taluk', 'District', 'Required', 'Collected', 'Verified', 'Pending', 'Collection percentage'], ...talukRows.map(item => [item.name, item.district, item.required, item.collected, item.verified, item.pending, Math.round(item.percent)])])
+  return <div className="page-stack reports-page">
+    <div className="reports-heading"><div><span className="eyebrow">FINANCIAL REPORTING</span><h2>Taluk collection performance</h2><p>Required, collected, verified, and pending contributions across all configured taluks.</p></div><button className="secondary" onClick={exportTaluks}><Download /> Export taluk report</button></div>
+    <section className="report-summary" aria-label="Collection report summary"><div><span>Required</span><strong><Money value={totalRequired} /></strong></div><div><span>Recorded collections</span><strong><Money value={collected} /></strong></div><div><span>Verified</span><strong><Money value={verified} /></strong></div><div><span>Pending</span><strong><Money value={totalPending} /></strong></div></section>
+    <div className="report-toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search taluk or district" /><span>{visibleTaluks.length} of {talukRows.length} taluks</span></div>
+    {visibleTaluks.length ? <div className="taluk-report-table" role="table" aria-label="Taluk collection performance">
+      <div className="taluk-report-header" role="row"><span>Taluk</span><span>Required</span><span>Collected</span><span>Pending</span><span>Progress</span></div>
+      {visibleTaluks.map(item => <div className="taluk-report-row" role="row" key={item.id}>
+        <div className="taluk-report-name" role="cell"><strong>{item.name}</strong><span>{item.district}</span></div>
+        <div className="taluk-report-amount" role="cell"><span>Required</span><strong><Money value={item.required} /></strong></div>
+        <div className="taluk-report-amount" role="cell"><span>Collected</span><strong><Money value={item.collected} /></strong></div>
+        <div className="taluk-report-amount" role="cell"><span>Pending</span><strong><Money value={item.pending} /></strong></div>
+        <div className="taluk-report-progress" role="cell"><div><Progress value={item.percent} /><strong>{Math.round(item.percent)}%</strong></div><span><Money value={item.verified} /> verified</span></div>
+      </div>)}
+    </div> : <div className="dashboard-empty compact"><Search /><strong>No taluks found</strong><p>Try another taluk or district name.</p></div>}
+    <SectionHeading title="Other exports" />
+    <div className="report-list"><button onClick={exportDues}><IndianRupee /><span><strong>Outstanding dues</strong><small>{<Money value={members.reduce((sum, item) => sum + item.pending, 0)} />} across {members.length} members</small></span><Download /></button><button onClick={exportCases}><CalendarDays /><span><strong>Death cases</strong><small>{cases.length} records</small></span><Download /></button></div>
+  </div>
 }
 
 function CreateCaseModal({ onClose, onPublish }: { onClose: () => void; onPublish: (caseId: string) => void | Promise<void> }) {

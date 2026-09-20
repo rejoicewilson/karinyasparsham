@@ -72,6 +72,20 @@ test('Organization no longer exposes bank configuration', async ({ page }) => {
   await expect(page.getByTitle('Replace bank account')).toHaveCount(0)
 })
 
+test('View all taluks opens the detailed taluk report', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockAdminWorkspace(page)
+  await page.goto('/admin/dashboard')
+
+  await page.getByRole('button', { name: 'View all 8 taluks' }).click()
+  await expect(page).toHaveURL(/\/admin\/reports$/)
+  await expect(page.getByRole('heading', { name: 'Taluk collection performance' })).toBeVisible()
+  await expect(page.locator('.taluk-report-row')).toHaveCount(8)
+  await expect(page.getByRole('button', { name: 'Export taluk report' })).toBeVisible()
+  const dimensions = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }))
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+})
+
 for (const viewport of [
   { name: 'windows-fullscreen', width: 1365, height: 707 },
   { name: 'mobile', width: 390, height: 844 },
