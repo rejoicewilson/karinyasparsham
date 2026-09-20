@@ -442,20 +442,36 @@ function AdminDashboard({ deposits }: { deposits: DepositRecord[] }) {
     current.required += item.required; current.collected += item.collected; totals.set(item.id, current)
     return totals
   }, new Map<string, { required: number; collected: number }>())
+  const activeMembers = members.filter(member => member.status === 'Active').length
+  const permanentMembers = members.filter(member => member.membership === 'Permanent').length
+  const openCases = cases.filter(item => item.status === 'Open').length
+  const awaitingVerification = cases.reduce((sum, item) => sum + item.collected - item.verified, 0)
+  const outstandingDues = members.reduce((sum, item) => sum + item.pending, 0)
+  const talukPerformance = taluks.map(item => {
+    const total = talukTotals.get(String(item.id)) || { required: 0, collected: 0 }
+    return {
+      id: String(item.id), name: String(item.name), required: total.required, collected: total.collected,
+      pending: Math.max(total.required - total.collected, 0),
+      percent: total.required ? total.collected / total.required * 100 : 0,
+    }
+  }).sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name))
+  const totalRequired = talukPerformance.reduce((sum, item) => sum + item.required, 0)
+  const totalCollected = talukPerformance.reduce((sum, item) => sum + item.collected, 0)
+  const overallPercent = totalRequired ? totalCollected / totalRequired * 100 : 0
   return <div className="page-stack admin-page">
-    <div className="admin-heading"><div><span className="eyebrow">LIVE DATABASE</span><h2>Administration overview</h2><p>Current organization and collection status.</p></div><button className="primary" onClick={() => navigate('/admin/cases?create=1')}><Plus /> New death case</button></div>
+    <div className="admin-heading"><div><span className="eyebrow">OPERATIONS SUMMARY</span><h2>Administration overview</h2><p>Member obligations, collections, and taluk performance at a glance.</p></div><button className="primary" onClick={() => navigate('/admin/cases?create=1')}><Plus /> New death case</button></div>
     <section className="metric-grid admin-metrics">
-      <Metric icon={Users} label="Active members" value={String(members.filter(m => m.status === 'Active').length)} detail={`${members.filter(m => m.membership === 'Permanent').length} permanent`} />
-      <Metric icon={HeartHandshake} label="Open cases" value={String(cases.filter(c => c.status === 'Open').length)} detail={`${cases.length} total cases`} tone="red" />
-      <Metric icon={Clock3} label="Awaiting verification" value={<Money value={cases.reduce((sum, item) => sum + item.collected - item.verified, 0)} />} detail="Collected, pending approval" tone="amber" />
-      <Metric icon={IndianRupee} label="Outstanding dues" value={<Money value={members.reduce((sum, item) => sum + item.pending, 0)} />} detail={`${taluks.length} taluks`} tone="blue" />
+      <Metric icon={Users} label="Active members" value={String(activeMembers)} detail={`${permanentMembers} permanent members`} />
+      <Metric icon={HeartHandshake} label="Open death cases" value={String(openCases)} detail={`${cases.length} cases in the register`} tone="red" />
+      <Metric icon={Clock3} label="Awaiting verification" value={<Money value={awaitingVerification} />} detail="Collected but not yet verified" tone="amber" />
+      <Metric icon={IndianRupee} label="Outstanding dues" value={<Money value={outstandingDues} />} detail={`Across ${taluks.length} taluks`} tone="blue" />
     </section>
     <div className="admin-columns">
-      <section><SectionHeading title="Collection records" action="View all" onAction={() => navigate('/admin/handovers')} /><div className="list-surface">{deposits.slice(0, 5).map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => navigate('/admin/handovers')} />)}</div></section>
-      <section><SectionHeading title="Taluk collection progress" action="View report" onAction={() => navigate('/admin/reports')} />{taluks.length ? <div className="taluk-progress">{taluks.map(item => { const total = talukTotals.get(String(item.id)); const percent = total?.required ? total.collected / total.required * 100 : 0; return <div key={String(item.id)}><div><strong>{String(item.name)}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No taluks have been configured.</p>}</section>
+      <section><SectionHeading title="Recent collection activity" action="View collections" onAction={() => navigate('/admin/handovers')} />{deposits.length ? <div className="list-surface">{deposits.slice(0, 5).map(d => <DepositRow key={d.id} deposit={d} admin onClick={() => navigate('/admin/handovers')} />)}</div> : <div className="dashboard-empty"><div><Receipt /></div><strong>No collection activity yet</strong><p>Verified collection batches will appear here as administrators record them.</p><button className="secondary" onClick={() => navigate('/admin/handovers')}>Open collections <ArrowRight /></button></div>}</section>
+      <section><SectionHeading title="Taluk performance" action="Full report" onAction={() => navigate('/admin/reports')} />{taluks.length ? <div className="taluk-progress dashboard-taluk-progress"><div className="taluk-progress-summary"><div><span>Overall collection</span><strong>{Math.round(overallPercent)}%</strong></div><div><span>Collected</span><strong><Money value={totalCollected} /></strong></div><div><span>Pending</span><strong><Money value={Math.max(totalRequired - totalCollected, 0)} /></strong></div></div><Progress value={overallPercent} />{talukPerformance.slice(0, 6).map(item => <div className="taluk-progress-row" key={item.id}><div><strong>{item.name}</strong><span>{Math.round(item.percent)}%</span></div><Progress value={item.percent} /><small><Money value={item.pending} /> pending</small></div>)}{taluks.length > 6 && <button className="taluk-report-link" onClick={() => navigate('/admin/reports')}>View all {taluks.length} taluks <ArrowRight /></button>}</div> : <div className="dashboard-empty compact"><Landmark /><strong>No taluks configured</strong><p>Add the organization structure to begin tracking collection performance.</p></div>}</section>
     </div>
     <SectionHeading title="Recent death cases" action="View register" onAction={() => navigate('/admin/cases')} />
-    <div className="case-list admin-cases">{cases.slice(0, 3).map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/admin/cases/${item.id}`)} />)}</div>
+    {cases.length ? <div className="case-list admin-cases">{cases.slice(0, 3).map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/admin/cases/${item.id}`)} />)}</div> : <div className="dashboard-empty compact"><HeartHandshake /><strong>No death cases in the register</strong><p>New cases will appear here after they are created.</p></div>}
   </div>
 }
 
