@@ -1,4 +1,4 @@
-"""Idempotently import members from a three-column Markdown table."""
+"""Idempotently import members from a Markdown table."""
 
 import argparse
 import asyncio
@@ -39,12 +39,16 @@ def table_rows(path: Path) -> list[tuple[str, str | None, str, str]]:
         if not raw_line.strip().startswith("|"):
             continue
         columns = [item.strip() for item in raw_line.strip().strip("|").split("|")]
-        if columns[0].casefold() == "taluk" or set(columns[0]) <= {"-", ":"}:
+        if columns[0].casefold() in {"taluk", "no", "no."} or set(columns[0]) <= {"-", ":"}:
             continue
         if len(columns) == 3:
             rows.append((columns[0], None, columns[1], columns[2]))
         elif len(columns) == 4:
             rows.append((columns[0], columns[1] or None, columns[2], columns[3]))
+        elif len(columns) == 5:
+            if not columns[0].isdigit() or int(columns[0]) != len(rows) + 1:
+                raise SystemExit("Numbered member rows must be consecutive, starting at 1.")
+            rows.append((columns[1], columns[2] or None, columns[3], columns[4]))
     return rows
 
 
@@ -249,7 +253,7 @@ async def import_members(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", help="Path to a Markdown table with Taluk, Name, and Phone Number columns")
+    parser.add_argument("source", help="Path to a Markdown table with Taluk, optional ARD, Name, and Phone Number columns")
     parser.add_argument("--taluk", required=True)
     parser.add_argument("--joined-on", required=True, type=date.fromisoformat)
     parser.add_argument("--expected-count", required=True, type=int)
