@@ -31,6 +31,7 @@ def main() -> None:
     parser.add_argument("--receipt-prefix", required=True)
     parser.add_argument("--dropped-member-code")
     parser.add_argument("--dropped-paid-through-case", type=int)
+    parser.add_argument("--excluded-member-code")
     parser.add_argument("--admin-login", default="admin")
     parser.add_argument("--expected-members", type=int)
     parser.add_argument("--expected-paid-obligations", type=int)
@@ -105,6 +106,17 @@ def main() -> None:
                 if len(matches) != 1:
                     raise SystemExit("Dropped member code did not match exactly one member.")
                 dropped = matches[0]
+            excluded = None
+            if args.excluded_member_code:
+                matches = [
+                    member for member in members
+                    if member["member_code"].casefold() == args.excluded_member_code.casefold()
+                ]
+                if len(matches) != 1:
+                    raise SystemExit("Excluded member code did not match exactly one member.")
+                excluded = matches[0]
+                if dropped is not None and excluded["id"] == dropped["id"]:
+                    raise SystemExit("Dropped and excluded members must be different.")
             non_active = [
                 member["member_code"] for member in members
                 if member["account_status"] != "ACTIVE"
@@ -138,6 +150,8 @@ def main() -> None:
             paid_specs = []
             pending_specs = []
             for member in members:
+                if excluded is not None and member["id"] == excluded["id"]:
+                    continue
                 is_dropped = dropped is not None and member["id"] == dropped["id"]
                 member_paid_through = (
                     args.dropped_paid_through_case if is_dropped else args.paid_through_case
@@ -215,6 +229,7 @@ def main() -> None:
                 "through_case": args.through_case,
                 "dropped_member_code": dropped["member_code"] if dropped else None,
                 "dropped_paid_through_case": args.dropped_paid_through_case,
+                "excluded_member_code": excluded["member_code"] if excluded else None,
                 "dropped_member_will_be_inactive": bool(
                     dropped and dropped["account_status"] != "INACTIVE"
                 ),
@@ -338,6 +353,7 @@ def main() -> None:
                         "through_case": args.through_case,
                         "dropped_member_code": dropped["member_code"] if dropped else None,
                         "dropped_paid_through_case": args.dropped_paid_through_case,
+                        "excluded_member_code": excluded["member_code"] if excluded else None,
                         "paid_obligations": len(paid_specs),
                         "verified_amount": str(paid_amount),
                         "pending_obligations": len(pending_specs),
