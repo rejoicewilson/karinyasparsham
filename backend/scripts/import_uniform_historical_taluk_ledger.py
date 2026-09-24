@@ -22,6 +22,23 @@ CONFIRMATION = "IMPORT-UNIFORM-HISTORICAL-TALUK-LEDGER"
 REQUEST_NAMESPACE = uuid.UUID("a45e194c-6a2c-49a4-95f3-519d2154dc96")
 
 
+def parse_paid_through_overrides(values: list[str]) -> dict[str, int]:
+    overrides: dict[str, int] = {}
+    for value in values:
+        member_code, separator, paid_through = value.partition("=")
+        normalized_code = member_code.strip().casefold()
+        if not separator or not normalized_code:
+            raise SystemExit("Member paid-through overrides must use MEMBER_CODE=CASE_NUMBER.")
+        try:
+            case_number = int(paid_through)
+        except ValueError as exc:
+            raise SystemExit("Member paid-through case numbers must be integers.") from exc
+        if normalized_code in overrides:
+            raise SystemExit(f"Duplicate member paid-through override: {member_code.strip()}.")
+        overrides[normalized_code] = case_number
+    return overrides
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
@@ -32,6 +49,7 @@ def main() -> None:
     parser.add_argument("--dropped-member-code")
     parser.add_argument("--dropped-paid-through-case", type=int)
     parser.add_argument("--excluded-member-code")
+    parser.add_argument("--member-paid-through", action="append", default=[])
     parser.add_argument("--admin-login", default="admin")
     parser.add_argument("--expected-members", type=int)
     parser.add_argument("--expected-paid-obligations", type=int)
@@ -41,6 +59,7 @@ def main() -> None:
     parser.add_argument("--confirm")
     args = parser.parse_args()
     apply_change = args.confirm == CONFIRMATION
+    paid_through_overrides = parse_paid_through_overrides(args.member_paid_through)
 
     if args.paid_through_case < 0 or args.paid_through_case > args.through_case:
         raise SystemExit("Paid-through case must be between zero and through-case.")
@@ -50,6 +69,13 @@ def main() -> None:
         0 <= args.dropped_paid_through_case <= args.paid_through_case
     ):
         raise SystemExit("Dropped member paid-through case is outside the allowed range.")
+    if any(
+        case_number < 0 or case_number > args.paid_through_case
+        for case_number in paid_through_overrides.values()
+    ):
+        raise SystemExit(
+            "Member paid-through overrides must be between zero and the default paid-through case."
+        )
     source_rows = load_rows(args.source.resolve())
     selected_rows = [row for row in source_rows if int(row["legacy_no"]) <= args.through_case]
     if [int(row["legacy_no"]) for row in selected_rows] != list(range(1, args.through_case + 1)):
@@ -117,6 +143,23 @@ def main() -> None:
                 excluded = matches[0]
                 if dropped is not None and excluded["id"] == dropped["id"]:
                     raise SystemExit("Dropped and excluded members must be different.")
+            member_by_code = {member["member_code"].casefold(): member for member in members}
+            unknown_overrides = sorted(set(paid_through_overrides) - set(member_by_code))
+            if unknown_overrides:
+                raise SystemExit(
+                    "Member paid-through overrides did not match: " + ", ".join(unknown_overrides)
+                )
+            override_by_member_id = {
+                member_by_code[member_code]["id"]: case_number
+                for member_code, case_number in paid_through_overrides.items()
+            }
+            reserved_ids = {
+                member["id"] for member in (dropped, excluded) if member is not None
+            }
+            if reserved_ids.intersection(override_by_member_id):
+                raise SystemExit(
+                    "Dropped or excluded members cannot also have paid-through overrides."
+                )
             non_active = [
                 member["member_code"] for member in members
                 if member["account_status"] != "ACTIVE"
@@ -154,7 +197,9 @@ def main() -> None:
                     continue
                 is_dropped = dropped is not None and member["id"] == dropped["id"]
                 member_paid_through = (
-                    args.dropped_paid_through_case if is_dropped else args.paid_through_case
+                    args.dropped_paid_through_case
+                    if is_dropped
+                    else override_by_member_id.get(member["id"], args.paid_through_case)
                 )
                 member_through = member_paid_through if is_dropped else args.through_case
                 for sequence in range(1, member_through + 1):
@@ -230,6 +275,10 @@ def main() -> None:
                 "dropped_member_code": dropped["member_code"] if dropped else None,
                 "dropped_paid_through_case": args.dropped_paid_through_case,
                 "excluded_member_code": excluded["member_code"] if excluded else None,
+                "member_paid_through_overrides": {
+                    member_by_code[member_code]["member_code"]: case_number
+                    for member_code, case_number in paid_through_overrides.items()
+                },
                 "dropped_member_will_be_inactive": bool(
                     dropped and dropped["account_status"] != "INACTIVE"
                 ),
@@ -284,6 +333,8 @@ def main() -> None:
                     ),
                 )
 
+            obligation_rows = []
+            collection_rows = []
             for key, spec in desired.items():
                 if key in existing:
                     continue
@@ -294,36 +345,19 @@ def main() -> None:
                 paid = bool(spec["paid"])
                 timestamp = case_timestamp(case["death_date"])
                 obligation_id = uuid.uuid4()
-                cursor.execute(
-                    """
-                    INSERT INTO case_obligations (
-                        id, death_case_id, member_id, taluk_id_snapshot,
-                        responsible_agent_id, original_agent_id, required_amount,
-                        collected_amount, verified_amount, created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
+                obligation_rows.append(
                     (
                         obligation_id, case["id"], member["id"], taluk["id"],
                         assignment["agent_profile_id"], assignment["agent_profile_id"], amount,
                         amount if paid else Decimal("0"), amount if paid else Decimal("0"),
                         timestamp, timestamp,
-                    ),
+                    )
                 )
                 if paid:
-                    cursor.execute(
-                        """
-                        INSERT INTO collection_transactions (
-                            id, receipt_number, collection_type, member_id, agent_profile_id,
-                            taluk_id, case_obligation_id, permanent_account_id, amount, method,
-                            external_reference, note, collected_at, status, created_by,
-                            client_request_id, created_at, updated_at
-                        ) VALUES (
-                            %s, %s, 'DEATH_CONTRIBUTION', %s, %s, %s, %s, NULL, %s, 'OTHER',
-                            %s, %s, %s, 'VERIFIED', %s, %s, %s, %s
-                        )
-                        """,
+                    collection_rows.append(
                         (
-                            uuid.uuid4(), f"{args.receipt_prefix}-{sequence:03d}-{member['member_code']}",
+                            uuid.uuid4(),
+                            f"{args.receipt_prefix}-{sequence:03d}-{member['member_code']}",
                             member["id"], assignment["agent_profile_id"], taluk["id"], obligation_id,
                             amount, f"Historical case {sequence}",
                             "Verified payment reconstructed from pre-application records.",
@@ -333,8 +367,33 @@ def main() -> None:
                                 f"{args.taluk.casefold()}:{sequence}:{member['id']}",
                             ),
                             timestamp, timestamp,
-                        ),
+                        )
                     )
+
+            cursor.executemany(
+                """
+                INSERT INTO case_obligations (
+                    id, death_case_id, member_id, taluk_id_snapshot,
+                    responsible_agent_id, original_agent_id, required_amount,
+                    collected_amount, verified_amount, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                obligation_rows,
+            )
+            cursor.executemany(
+                """
+                INSERT INTO collection_transactions (
+                    id, receipt_number, collection_type, member_id, agent_profile_id,
+                    taluk_id, case_obligation_id, permanent_account_id, amount, method,
+                    external_reference, note, collected_at, status, created_by,
+                    client_request_id, created_at, updated_at
+                ) VALUES (
+                    %s, %s, 'DEATH_CONTRIBUTION', %s, %s, %s, %s, NULL, %s, 'OTHER',
+                    %s, %s, %s, 'VERIFIED', %s, %s, %s, %s
+                )
+                """,
+                collection_rows,
+            )
 
             cursor.execute(
                 """
@@ -354,6 +413,10 @@ def main() -> None:
                         "dropped_member_code": dropped["member_code"] if dropped else None,
                         "dropped_paid_through_case": args.dropped_paid_through_case,
                         "excluded_member_code": excluded["member_code"] if excluded else None,
+                        "member_paid_through_overrides": {
+                            member_by_code[member_code]["member_code"]: case_number
+                            for member_code, case_number in paid_through_overrides.items()
+                        },
                         "paid_obligations": len(paid_specs),
                         "verified_amount": str(paid_amount),
                         "pending_obligations": len(pending_specs),
