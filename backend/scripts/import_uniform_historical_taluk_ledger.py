@@ -166,7 +166,7 @@ def main() -> None:
                 and not (
                     dropped is not None
                     and member["id"] == dropped["id"]
-                    and member["account_status"] == "INACTIVE"
+                    and member["account_status"] in {"INACTIVE", "DECEASED"}
                 )
             ]
             if non_active:
@@ -280,7 +280,7 @@ def main() -> None:
                     for member_code, case_number in paid_through_overrides.items()
                 },
                 "dropped_member_will_be_inactive": bool(
-                    dropped and dropped["account_status"] != "INACTIVE"
+                    dropped and dropped["account_status"] == "ACTIVE"
                 ),
                 "paid_obligations": len(paid_specs),
                 "verified_amount": str(paid_amount),
@@ -308,7 +308,7 @@ def main() -> None:
             if not all(guards):
                 raise SystemExit("One or more expected-total guards do not match the dry run.")
 
-            if dropped and dropped["account_status"] != "INACTIVE":
+            if dropped and dropped["account_status"] == "ACTIVE":
                 cursor.execute(
                     "UPDATE profiles SET account_status = 'INACTIVE', must_change_password = false "
                     "WHERE id = (SELECT profile_id FROM members WHERE id = %s)",
