@@ -38,7 +38,16 @@ export interface MemberRecord {
   permanentAccountId?: string
   permanentTarget?: number
   permanentCollected?: number
-  obligations?: Array<{ id: string; caseId: string; label: string; available: number }>
+  obligations?: Array<{
+    id: string
+    caseId: string
+    caseNumber: string
+    label: string
+    required: number
+    collected: number
+    verified: number
+    available: number
+  }>
 }
 
 export interface CollectionRecord {

@@ -22,7 +22,16 @@ const members = [
   permanent_verified: 0,
   permanent_target: 15000,
   permanent_collected: 0,
-  obligations: [],
+  obligations: item.id === '1' ? [{
+    id: 'obligation-1',
+    case_id: 'case-1',
+    case_number: 'HIST-001',
+    label: 'Historical member',
+    required_amount: 200,
+    collected_amount: 100,
+    verified_amount: 100,
+    available_amount: 100,
+  }] : [],
 }))
 
 const cases = [
@@ -97,4 +106,40 @@ test('administrator filters members and counts by taluk on mobile', async ({ pag
     scrollWidth: document.documentElement.scrollWidth,
   }))
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+})
+
+test('administrator opens a member case-by-case payment ledger', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 })
+  await mockMembersWorkspace(page)
+  await page.goto('/admin/members')
+
+  await page.getByText('Kasargod Active', { exact: true }).click()
+  await expect(page).toHaveURL(/\/admin\/members\/1$/)
+  await expect(page.getByRole('heading', { name: 'Case-by-case payment ledger' })).toBeVisible()
+  await expect(page.getByText('HIST-001', { exact: true })).toBeVisible()
+  await expect(page.getByText('Historical member', { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Pending (1)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Verified (0)' })).toBeVisible()
+
+  const amounts = page.locator('.member-case-amounts')
+  await expect(amounts).toContainText('Required')
+  await expect(amounts).toContainText('Collected')
+  await expect(amounts).toContainText('Verified')
+  await expect(amounts).toContainText('Pending')
+
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }))
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+  await page.screenshot({ path: 'test-results/admin-member-ledger-desktop.png', fullPage: true })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  const mobileDimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }))
+  expect(mobileDimensions.scrollWidth).toBeLessThanOrEqual(mobileDimensions.clientWidth)
+  await page.screenshot({ path: 'test-results/admin-member-ledger-mobile.png', fullPage: true })
 })

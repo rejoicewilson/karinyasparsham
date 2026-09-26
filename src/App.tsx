@@ -93,7 +93,9 @@ function mapWorkspace(raw: Workspace) {
     permanentAccountId: item.permanent_account_id ? String(item.permanent_account_id) : undefined,
     permanentTarget: Number(item.permanent_target), permanentCollected: Number(item.permanent_collected),
     obligations: (item.obligations || []).map((due: Record<string, any>) => ({
-      id: String(due.id), caseId: String(due.case_id), label: String(due.label), available: Number(due.available_amount)
+      id: String(due.id), caseId: String(due.case_id), caseNumber: String(due.case_number), label: String(due.label),
+      required: Number(due.required_amount), collected: Number(due.collected_amount),
+      verified: Number(due.verified_amount), available: Number(due.available_amount)
     }))
   }))
   const memberDues: DueRecord[] = raw.dues.map(item => ({
@@ -363,6 +365,7 @@ function RoleRouter(props: {
   if (section === 'cases' && detail) return <CaseDetail caseId={detail} admin />
   if (section === 'cases') return <AdminCases online={props.online} notify={props.notify} reload={props.reload} />
   if (section === 'handovers' || section === 'deposits') return <AdminDeposits deposits={props.deposits} setDeposits={props.setDeposits} collections={props.collections} setCollections={props.setCollections} online={props.online} notify={props.notify} reload={props.reload} />
+  if (section === 'members' && detail) return <AdminMemberDetail id={detail} collections={props.collections} />
   if (section === 'members') return <MembersPage role="admin" reload={props.reload} notify={props.notify} />
   if (section === 'taluks') return <TaluksPage reload={props.reload} notify={props.notify} />
   if (section === 'reports') return <ReportsPage />
@@ -894,7 +897,7 @@ function MembersPage({ role, reload, notify }: { role: 'agent' | 'admin'; reload
     collected: talukCaseRows.reduce((sum, item) => sum + item.collected, 0),
     pending: talukCaseRows.reduce((sum, item) => sum + Math.max(item.required - item.collected, 0), 0),
   }
-  return <div className="page-stack"><div className="toolbar member-toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search name, member code, ARD or phone" />{role === 'admin' && <label className="taluk-filter"><select aria-label="Filter members by taluk" value={talukFilter} onChange={event => setTalukFilter(event.target.value)}><option value="All">All taluks</option>{talukOptions.map(taluk => <option value={taluk} key={taluk}>{taluk}</option>)}</select></label>}{role === 'admin' && <button className="primary" onClick={() => setAdding(true)}><Plus /> Add member</button>}</div>{role === 'admin' && <section className="taluk-summary" aria-label={`${talukFilter === 'All' ? 'All taluks' : talukFilter} financial summary`}><div><HeartHandshake /><span>Death cases</span><strong>{talukSummary.cases}</strong></div><div><BadgeCheck /><span>Collected</span><strong><Money value={talukSummary.collected} /></strong></div><div><Clock3 /><span>Pending</span><strong><Money value={talukSummary.pending} /></strong></div></section>}<div className="filter-row">{(['Active', 'Permanent', 'Inactive'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status} ({counts[status]})</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={role === 'admin' ? () => setEditing(m) : undefined} actionLabel="Edit" onClick={role === 'agent' ? () => navigate(`/agent/members/${m.id}`) : undefined} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search, taluk, or member status.</p></div>}{adding && reload && notify && <InitialSetupModal kind="member" onClose={() => setAdding(false)} reload={reload} notify={notify} />}{editing && reload && notify && <EditMemberModal member={editing} onClose={() => setEditing(null)} reload={reload} notify={notify} />}</div>
+  return <div className="page-stack"><div className="toolbar member-toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search name, member code, ARD or phone" />{role === 'admin' && <label className="taluk-filter"><select aria-label="Filter members by taluk" value={talukFilter} onChange={event => setTalukFilter(event.target.value)}><option value="All">All taluks</option>{talukOptions.map(taluk => <option value={taluk} key={taluk}>{taluk}</option>)}</select></label>}{role === 'admin' && <button className="primary" onClick={() => setAdding(true)}><Plus /> Add member</button>}</div>{role === 'admin' && <section className="taluk-summary" aria-label={`${talukFilter === 'All' ? 'All taluks' : talukFilter} financial summary`}><div><HeartHandshake /><span>Death cases</span><strong>{talukSummary.cases}</strong></div><div><BadgeCheck /><span>Collected</span><strong><Money value={talukSummary.collected} /></strong></div><div><Clock3 /><span>Pending</span><strong><Money value={talukSummary.pending} /></strong></div></section>}<div className="filter-row">{(['Active', 'Permanent', 'Inactive'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status} ({counts[status]})</button>)}</div>{visible.length ? <div className="member-list">{visible.map(m => <MemberRow member={m} key={m.id} action={role === 'admin' ? () => setEditing(m) : undefined} actionLabel="Edit" onClick={() => navigate(`/${role}/members/${m.id}`)} />)}</div> : <div className="empty-review"><Users /><h3>No members found</h3><p>Try another search, taluk, or member status.</p></div>}{adding && reload && notify && <InitialSetupModal kind="member" onClose={() => setAdding(false)} reload={reload} notify={notify} />}{editing && reload && notify && <EditMemberModal member={editing} onClose={() => setEditing(null)} reload={reload} notify={notify} />}</div>
 }
 
 function MemberDetail({ id, collections }: { id: string; collections: CollectionRecord[] }) {
@@ -907,6 +910,87 @@ function MemberDetail({ id, collections }: { id: string; collections: Collection
   const stillToCollect = Math.max(target - collected, 0)
   const payments = collections.filter(item => item.memberId === id)
   return <div className="page-stack detail-page"><button className="back-link" onClick={() => history.back()}><ArrowLeft /> Back to members</button><section className="profile-hero"><Avatar name={m.name} color="#276749" large /><div><span>{m.code}</span><h2>{m.name}</h2><p>{m.phone} · {m.taluk} Taluk</p><Status value={m.membership} /></div></section><section className="metric-grid compact"><Metric icon={IndianRupee} label="Death-case dues" value={<Money value={m.pending} />} tone="red" /><Metric icon={IndianRupee} label="Permanent collected" value={<Money value={collected} />} tone="amber" /><Metric icon={Clock3} label="Awaiting verification" value={<Money value={awaiting} />} tone="blue" /><Metric icon={ShieldCheck} label="Permanent verified" value={<Money value={m.permanentVerified} />} tone="green" /></section><SectionHeading title="Permanent membership" /><section className="progress-section"><div className="progress-copy"><div><span>Collected</span><strong>{<Money value={collected} />}</strong></div><div><span>Verified</span><strong>{<Money value={m.permanentVerified} />}</strong></div></div><Progress value={target ? (m.permanentVerified / target) * 100 : 0} /><p><Clock3 /> {<Money value={awaiting} />} awaiting verification · {<Money value={stillToCollect} />} still to collect</p></section><SectionHeading title="Payment history" />{payments.length ? <div className="payment-list">{payments.map(payment => <article key={payment.id}><div className={`payment-icon ${payment.status.toLowerCase()}`}>{payment.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{payment.label}</strong><span>{payment.receipt} · {payment.date}</span><small>{payment.method}</small></div><div><strong>{<Money value={payment.amount} />}</strong><Status value={payment.status === 'Recorded' || payment.status === 'Batched' ? 'Awaiting Verification' : 'Verified'} /></div></article>)}</div> : <p className="subtle">No payments have been recorded for this member.</p>}</div>
+}
+
+function AdminMemberDetail({ id, collections }: { id: string; collections: CollectionRecord[] }) {
+  const navigate = useNavigate()
+  const { members, cases } = useAppData()
+  const [filter, setFilter] = useState<'All' | 'Pending' | 'Verified'>('All')
+  const member = members.find(item => item.id === id)
+
+  if (!member) {
+    return <div className="empty-review"><Users /><h3>Member not found</h3><p>This member may have been removed or is no longer available.</p></div>
+  }
+
+  const obligations = member.obligations || []
+  const rows = obligations.map(obligation => ({
+    ...obligation,
+    caseRecord: cases.find(item => item.id === obligation.caseId),
+    status: getMoneyStatus(obligation.required, obligation.collected, obligation.verified),
+    pending: Math.max(obligation.required - obligation.collected, 0),
+  }))
+  const pendingRows = rows.filter(item => item.pending > 0)
+  const verifiedRows = rows.filter(item => item.status === 'Verified')
+  const visibleRows = filter === 'Pending' ? pendingRows : filter === 'Verified' ? verifiedRows : rows
+  const totals = rows.reduce((total, item) => ({
+    required: total.required + item.required,
+    collected: total.collected + item.collected,
+    verified: total.verified + item.verified,
+    pending: total.pending + item.pending,
+  }), { required: 0, collected: 0, verified: 0, pending: 0 })
+  const payments = collections.filter(item => item.memberId === id && item.type === 'Death contribution')
+
+  return <div className="page-stack detail-page member-ledger-page">
+    <button className="back-link" onClick={() => navigate('/admin/members')}><ArrowLeft /> Back to members</button>
+    <section className="profile-hero member-ledger-profile">
+      <Avatar name={member.name} color="#276749" large />
+      <div>
+        <span>{member.code}{member.ardNo ? ` · ARD ${member.ardNo}` : ''}</span>
+        <h2>{member.name}</h2>
+        <p>{member.phone || 'No phone number'} · {member.taluk} Taluk{member.joinedOn ? ` · Joined ${dateText(member.joinedOn)}` : ''}</p>
+        <div className="member-statuses"><Status value={member.status} /><Status value={member.membership} /></div>
+      </div>
+    </section>
+
+    <section className="metric-grid compact member-ledger-metrics">
+      <Metric icon={HeartHandshake} label="Assigned cases" value={String(rows.length)} />
+      <Metric icon={IndianRupee} label="Required" value={<Money value={totals.required} />} tone="amber" />
+      <Metric icon={BadgeCheck} label="Verified" value={<Money value={totals.verified} />} tone="green" />
+      <Metric icon={Clock3} label="Pending" value={<Money value={totals.pending} />} tone="red" />
+    </section>
+
+    <div className="member-ledger-heading">
+      <div>
+        <h2>Case-by-case payment ledger</h2>
+        <p>Required, collected, verified, and pending amounts for every eligible death case.</p>
+      </div>
+      <div className="filter-row" aria-label="Filter payment ledger">
+        <button className={`chip ${filter === 'All' ? 'active' : ''}`} onClick={() => setFilter('All')}>All ({rows.length})</button>
+        <button className={`chip ${filter === 'Pending' ? 'active' : ''}`} onClick={() => setFilter('Pending')}>Pending ({pendingRows.length})</button>
+        <button className={`chip ${filter === 'Verified' ? 'active' : ''}`} onClick={() => setFilter('Verified')}>Verified ({verifiedRows.length})</button>
+      </div>
+    </div>
+
+    {visibleRows.length ? <div className="member-case-ledger">
+      {visibleRows.map(item => <article key={item.id}>
+        <div className="member-case-identity">
+          <span>{item.caseNumber || item.caseRecord?.caseNumber || 'Death case'}</span>
+          <strong>{item.caseRecord?.name || item.label}</strong>
+          <small>{item.caseRecord ? `${item.caseRecord.taluk} Taluk · ${item.caseRecord.deathDate}` : item.label}</small>
+        </div>
+        <Status value={item.status} />
+        <div className="member-case-amounts">
+          <div><span>Required</span><strong><Money value={item.required} /></strong></div>
+          <div><span>Collected</span><strong><Money value={item.collected} /></strong></div>
+          <div><span>Verified</span><strong><Money value={item.verified} /></strong></div>
+          <div className={item.pending ? 'pending' : ''}><span>Pending</span><strong><Money value={item.pending} /></strong></div>
+        </div>
+      </article>)}
+    </div> : <div className="empty-review"><Receipt /><h3>No {filter.toLowerCase()} cases</h3><p>{rows.length ? 'Choose another payment status.' : 'No death-case obligations were assigned to this member.'}</p></div>}
+
+    <SectionHeading title={`Recorded payments (${payments.length})`} />
+    {payments.length ? <div className="payment-list">{payments.map(payment => <article key={payment.id}><div className={`payment-icon ${payment.status.toLowerCase()}`}>{payment.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{payment.label}</strong><span>{payment.receipt} · {payment.date}</span><small>{payment.method}</small></div><div><strong><Money value={payment.amount} /></strong><Status value={payment.status === 'Verified' ? 'Verified' : 'Awaiting Verification'} /></div></article>)}</div> : <p className="subtle">No individual payment receipts are available for this member.</p>}
+  </div>
 }
 
 function NotificationsPage() {
