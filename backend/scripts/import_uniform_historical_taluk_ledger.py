@@ -48,6 +48,7 @@ def main() -> None:
     parser.add_argument("--receipt-prefix", required=True)
     parser.add_argument("--dropped-member-code")
     parser.add_argument("--dropped-paid-through-case", type=int)
+    parser.add_argument("--dropped-through-case", type=int)
     parser.add_argument("--excluded-member-code")
     parser.add_argument("--member-paid-through", action="append", default=[])
     parser.add_argument("--admin-login", default="admin")
@@ -65,10 +66,16 @@ def main() -> None:
         raise SystemExit("Paid-through case must be between zero and through-case.")
     if (args.dropped_member_code is None) != (args.dropped_paid_through_case is None):
         raise SystemExit("Dropped member code and paid-through case must be supplied together.")
+    if args.dropped_through_case is not None and args.dropped_member_code is None:
+        raise SystemExit("Dropped through-case requires a dropped member.")
     if args.dropped_paid_through_case is not None and not (
         0 <= args.dropped_paid_through_case <= args.through_case
     ):
         raise SystemExit("Dropped member paid-through case is outside the allowed range.")
+    if args.dropped_through_case is not None and not (
+        args.dropped_paid_through_case <= args.dropped_through_case <= args.through_case
+    ):
+        raise SystemExit("Dropped member through-case is outside the allowed range.")
     if any(
         case_number < 0 or case_number > args.paid_through_case
         for case_number in paid_through_overrides.values()
@@ -201,7 +208,11 @@ def main() -> None:
                     if is_dropped
                     else override_by_member_id.get(member["id"], args.paid_through_case)
                 )
-                member_through = member_paid_through if is_dropped else args.through_case
+                member_through = (
+                    (args.dropped_through_case or member_paid_through)
+                    if is_dropped
+                    else args.through_case
+                )
                 for sequence in range(1, member_through + 1):
                     case = case_by_number[f"HIST-{sequence:03d}"]
                     paid = sequence <= member_paid_through
@@ -221,7 +232,7 @@ def main() -> None:
                        co.required_amount, co.collected_amount, co.verified_amount,
                        m.member_code::text, dc.case_number::text,
                        (SELECT count(*) FROM collection_transactions ct
-                        WHERE ct.case_obligation_id = co.id) AS collection_count,
+                        WHERE ct.case_obligation_id = co.id AND ct.status <> 'VOIDED') AS collection_count,
                        (SELECT count(*) FROM collection_transactions ct
                         WHERE ct.case_obligation_id = co.id AND ct.status = 'VERIFIED') AS verified_collection_count,
                        (SELECT coalesce(sum(ct.amount), 0) FROM collection_transactions ct
@@ -274,6 +285,7 @@ def main() -> None:
                 "through_case": args.through_case,
                 "dropped_member_code": dropped["member_code"] if dropped else None,
                 "dropped_paid_through_case": args.dropped_paid_through_case,
+                "dropped_through_case": args.dropped_through_case,
                 "excluded_member_code": excluded["member_code"] if excluded else None,
                 "member_paid_through_overrides": {
                     member_by_code[member_code]["member_code"]: case_number
@@ -328,6 +340,7 @@ def main() -> None:
                         json.dumps({
                             "account_status": "INACTIVE",
                             "paid_through_case": args.dropped_paid_through_case,
+                            "through_case": args.dropped_through_case,
                         }),
                         uuid.uuid4(), json.dumps({"source": "pre_application_records"}),
                     ),
@@ -412,6 +425,7 @@ def main() -> None:
                         "through_case": args.through_case,
                         "dropped_member_code": dropped["member_code"] if dropped else None,
                         "dropped_paid_through_case": args.dropped_paid_through_case,
+                        "dropped_through_case": args.dropped_through_case,
                         "excluded_member_code": excluded["member_code"] if excluded else None,
                         "member_paid_through_overrides": {
                             member_by_code[member_code]["member_code"]: case_number
