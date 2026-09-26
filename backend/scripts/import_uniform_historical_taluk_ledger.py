@@ -66,7 +66,7 @@ def main() -> None:
     if (args.dropped_member_code is None) != (args.dropped_paid_through_case is None):
         raise SystemExit("Dropped member code and paid-through case must be supplied together.")
     if args.dropped_paid_through_case is not None and not (
-        0 <= args.dropped_paid_through_case <= args.paid_through_case
+        0 <= args.dropped_paid_through_case <= args.through_case
     ):
         raise SystemExit("Dropped member paid-through case is outside the allowed range.")
     if any(
