@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -24,10 +25,14 @@ def main() -> None:
     parser.add_argument("--expected-case-number", required=True)
     parser.add_argument("--new-member-code", required=True)
     parser.add_argument("--new-name", required=True)
+    parser.add_argument("--new-phone")
     parser.add_argument("--ard-no", required=True)
     parser.add_argument("--confirm", help="Must exactly match the new member code")
     args = parser.parse_args()
     apply_change = args.confirm == args.new_member_code
+    new_phone = args.new_phone or args.expected_phone
+    if not re.fullmatch(r"[0-9]{10}", new_phone):
+        raise SystemExit("New phone number must contain exactly 10 digits.")
 
     with psycopg.connect(database_url(), row_factory=dict_row) as connection:
         with connection.cursor() as cursor:
@@ -71,6 +76,8 @@ def main() -> None:
                 "new_member_code": args.new_member_code,
                 "current_name": row["full_name"],
                 "new_name": args.new_name.strip(),
+                "current_phone": row["phone"],
+                "new_phone": new_phone,
                 "ard_no": args.ard_no,
                 "case_number": row["case_number"],
                 "current_case_title": row["title"],
@@ -83,8 +90,8 @@ def main() -> None:
                 return
 
             cursor.execute(
-                "UPDATE profiles SET full_name = %s WHERE id = %s",
-                (args.new_name.strip(), row["profile_id"]),
+                "UPDATE profiles SET full_name = %s, phone = %s WHERE id = %s",
+                (args.new_name.strip(), new_phone, row["profile_id"]),
             )
             cursor.execute(
                 "UPDATE members SET member_code = %s, ard_no = %s, version = version + 1 WHERE id = %s",
@@ -112,12 +119,14 @@ def main() -> None:
                     json.dumps({
                         "member_code": row["member_code"],
                         "full_name": row["full_name"],
+                        "phone": row["phone"],
                         "ard_no": row["ard_no"],
                         "case_title": row["title"],
                     }),
                     json.dumps({
                         "member_code": args.new_member_code,
                         "full_name": args.new_name.strip(),
+                        "phone": new_phone,
                         "ard_no": args.ard_no,
                         "case_title": new_title,
                     }),

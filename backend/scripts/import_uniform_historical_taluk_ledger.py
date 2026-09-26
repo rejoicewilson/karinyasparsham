@@ -1,4 +1,4 @@
-"""Reconstruct a taluk ledger when every active member paid through one case."""
+"""Reconstruct a taluk ledger with guarded per-member historical exceptions."""
 
 import argparse
 import json
@@ -23,18 +23,22 @@ REQUEST_NAMESPACE = uuid.UUID("a45e194c-6a2c-49a4-95f3-519d2154dc96")
 
 
 def parse_paid_through_overrides(values: list[str]) -> dict[str, int]:
+    return parse_member_case_overrides(values, "paid-through")
+
+
+def parse_member_case_overrides(values: list[str], option_name: str) -> dict[str, int]:
     overrides: dict[str, int] = {}
     for value in values:
-        member_code, separator, paid_through = value.partition("=")
+        member_code, separator, case_value = value.partition("=")
         normalized_code = member_code.strip().casefold()
         if not separator or not normalized_code:
-            raise SystemExit("Member paid-through overrides must use MEMBER_CODE=CASE_NUMBER.")
+            raise SystemExit(f"Member {option_name} overrides must use MEMBER_CODE=CASE_NUMBER.")
         try:
-            case_number = int(paid_through)
+            case_number = int(case_value)
         except ValueError as exc:
-            raise SystemExit("Member paid-through case numbers must be integers.") from exc
+            raise SystemExit(f"Member {option_name} case numbers must be integers.") from exc
         if normalized_code in overrides:
-            raise SystemExit(f"Duplicate member paid-through override: {member_code.strip()}.")
+            raise SystemExit(f"Duplicate member {option_name} override: {member_code.strip()}.")
         overrides[normalized_code] = case_number
     return overrides
 
@@ -51,6 +55,9 @@ def main() -> None:
     parser.add_argument("--dropped-through-case", type=int)
     parser.add_argument("--excluded-member-code")
     parser.add_argument("--member-paid-through", action="append", default=[])
+    parser.add_argument("--member-start-case", action="append", default=[])
+    parser.add_argument("--member-through-case", action="append", default=[])
+    parser.add_argument("--deceased-member-code", action="append", default=[])
     parser.add_argument("--admin-login", default="admin")
     parser.add_argument("--expected-members", type=int)
     parser.add_argument("--expected-paid-obligations", type=int)
@@ -61,6 +68,11 @@ def main() -> None:
     args = parser.parse_args()
     apply_change = args.confirm == CONFIRMATION
     paid_through_overrides = parse_paid_through_overrides(args.member_paid_through)
+    start_case_overrides = parse_member_case_overrides(args.member_start_case, "start-case")
+    through_case_overrides = parse_member_case_overrides(args.member_through_case, "through-case")
+    deceased_member_codes = {value.strip().casefold() for value in args.deceased_member_code}
+    if len(deceased_member_codes) != len(args.deceased_member_code) or "" in deceased_member_codes:
+        raise SystemExit("Deceased member codes must be non-empty and unique.")
 
     if args.paid_through_case < 0 or args.paid_through_case > args.through_case:
         raise SystemExit("Paid-through case must be between zero and through-case.")
@@ -83,6 +95,10 @@ def main() -> None:
         raise SystemExit(
             "Member paid-through overrides must be between zero and the default paid-through case."
         )
+    if any(case_number < 1 or case_number > args.through_case for case_number in start_case_overrides.values()):
+        raise SystemExit("Member start-case overrides must be within the imported case range.")
+    if any(case_number < 0 or case_number > args.through_case for case_number in through_case_overrides.values()):
+        raise SystemExit("Member through-case overrides must be within the imported case range.")
     source_rows = load_rows(args.source.resolve())
     selected_rows = [row for row in source_rows if int(row["legacy_no"]) <= args.through_case]
     if [int(row["legacy_no"]) for row in selected_rows] != list(range(1, args.through_case + 1)):
@@ -151,22 +167,46 @@ def main() -> None:
                 if dropped is not None and excluded["id"] == dropped["id"]:
                     raise SystemExit("Dropped and excluded members must be different.")
             member_by_code = {member["member_code"].casefold(): member for member in members}
-            unknown_overrides = sorted(set(paid_through_overrides) - set(member_by_code))
+            referenced_codes = (
+                set(paid_through_overrides)
+                | set(start_case_overrides)
+                | set(through_case_overrides)
+                | deceased_member_codes
+            )
+            unknown_overrides = sorted(referenced_codes - set(member_by_code))
             if unknown_overrides:
                 raise SystemExit(
-                    "Member paid-through overrides did not match: " + ", ".join(unknown_overrides)
+                    "Member overrides did not match: " + ", ".join(unknown_overrides)
                 )
             override_by_member_id = {
                 member_by_code[member_code]["id"]: case_number
                 for member_code, case_number in paid_through_overrides.items()
             }
+            start_by_member_id = {
+                member_by_code[member_code]["id"]: case_number
+                for member_code, case_number in start_case_overrides.items()
+            }
+            through_by_member_id = {
+                member_by_code[member_code]["id"]: case_number
+                for member_code, case_number in through_case_overrides.items()
+            }
+            deceased_ids = {member_by_code[member_code]["id"] for member_code in deceased_member_codes}
             reserved_ids = {
                 member["id"] for member in (dropped, excluded) if member is not None
             }
-            if reserved_ids.intersection(override_by_member_id):
+            configured_ids = set(override_by_member_id) | set(start_by_member_id) | set(through_by_member_id)
+            if reserved_ids.intersection(configured_ids | deceased_ids):
                 raise SystemExit(
-                    "Dropped or excluded members cannot also have paid-through overrides."
+                    "Dropped or excluded members cannot also have per-member overrides."
                 )
+            for member_code in deceased_member_codes:
+                member = member_by_code[member_code]
+                if member["account_status"] != "DECEASED":
+                    raise SystemExit(f"Configured deceased member is not deceased: {member['member_code']}.")
+                if member["id"] not in override_by_member_id or member["id"] not in through_by_member_id:
+                    raise SystemExit(
+                        f"Deceased member requires paid-through and through-case overrides: {member['member_code']}."
+                    )
             non_active = [
                 member["member_code"] for member in members
                 if member["account_status"] != "ACTIVE"
@@ -175,6 +215,7 @@ def main() -> None:
                     and member["id"] == dropped["id"]
                     and member["account_status"] in {"INACTIVE", "DECEASED"}
                 )
+                and member["id"] not in deceased_ids
             ]
             if non_active:
                 raise SystemExit("Every member must be active for this uniform import: " + ", ".join(non_active))
@@ -211,9 +252,15 @@ def main() -> None:
                 member_through = (
                     (args.dropped_through_case or member_paid_through)
                     if is_dropped
-                    else args.through_case
+                    else through_by_member_id.get(member["id"], args.through_case)
                 )
-                for sequence in range(1, member_through + 1):
+                member_start = start_by_member_id.get(member["id"], 1)
+                if not (member_start - 1 <= member_paid_through <= member_through):
+                    raise SystemExit(
+                        f"Invalid historical range for {member['member_code']}: "
+                        f"start {member_start}, paid through {member_paid_through}, through {member_through}."
+                    )
+                for sequence in range(member_start, member_through + 1):
                     case = case_by_number[f"HIST-{sequence:03d}"]
                     paid = sequence <= member_paid_through
                     spec = {
@@ -291,6 +338,17 @@ def main() -> None:
                     member_by_code[member_code]["member_code"]: case_number
                     for member_code, case_number in paid_through_overrides.items()
                 },
+                "member_start_case_overrides": {
+                    member_by_code[member_code]["member_code"]: case_number
+                    for member_code, case_number in start_case_overrides.items()
+                },
+                "member_through_case_overrides": {
+                    member_by_code[member_code]["member_code"]: case_number
+                    for member_code, case_number in through_case_overrides.items()
+                },
+                "deceased_member_codes": sorted(
+                    member_by_code[member_code]["member_code"] for member_code in deceased_member_codes
+                ),
                 "dropped_member_will_be_inactive": bool(
                     dropped and dropped["account_status"] == "ACTIVE"
                 ),
@@ -431,6 +489,18 @@ def main() -> None:
                             member_by_code[member_code]["member_code"]: case_number
                             for member_code, case_number in paid_through_overrides.items()
                         },
+                        "member_start_case_overrides": {
+                            member_by_code[member_code]["member_code"]: case_number
+                            for member_code, case_number in start_case_overrides.items()
+                        },
+                        "member_through_case_overrides": {
+                            member_by_code[member_code]["member_code"]: case_number
+                            for member_code, case_number in through_case_overrides.items()
+                        },
+                        "deceased_member_codes": sorted(
+                            member_by_code[member_code]["member_code"]
+                            for member_code in deceased_member_codes
+                        ),
                         "paid_obligations": len(paid_specs),
                         "verified_amount": str(paid_amount),
                         "pending_obligations": len(pending_specs),

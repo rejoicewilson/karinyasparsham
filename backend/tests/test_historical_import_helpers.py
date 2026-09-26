@@ -5,7 +5,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from scripts.import_uniform_historical_taluk_ledger import parse_paid_through_overrides
+from scripts.import_uniform_historical_taluk_ledger import (
+    parse_member_case_overrides,
+    parse_paid_through_overrides,
+)
 
 
 def test_parse_paid_through_overrides_normalizes_member_codes():
@@ -23,3 +26,15 @@ def test_parse_paid_through_overrides_rejects_invalid_values(value):
 def test_parse_paid_through_overrides_rejects_duplicates():
     with pytest.raises(SystemExit, match="Duplicate"):
         parse_paid_through_overrides(["WYD-01-M022=20", "wyd-01-m022=19"])
+
+
+def test_parse_member_case_overrides_supports_eligibility_ranges():
+    assert parse_member_case_overrides([" TSR-01-M025=23 "], "start-case") == {
+        "tsr-01-m025": 23,
+    }
+
+
+@pytest.mark.parametrize("value", ["TSR-01-M025", "=23", "TSR-01-M025=twenty-three"])
+def test_parse_member_case_overrides_rejects_invalid_values(value):
+    with pytest.raises(SystemExit):
+        parse_member_case_overrides([value], "start-case")
