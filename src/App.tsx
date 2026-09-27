@@ -358,9 +358,9 @@ function RoleRouter(props: {
     if (section === 'collect' || section === 'handovers' || section === 'deposits') return <AgentPayments collections={props.collections} deposits={props.deposits} session={props.session} />
     if (section === 'members' && detail) return <MemberDetail id={detail} collections={props.collections} />
     if (section === 'members') return <MembersPage role="agent" />
-    if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
-    if (section === 'cases') return <CasesPage role="agent" />
-    return <AgentDashboard deposits={props.deposits} />
+    if (section === 'cases' && detail) return <CaseDetail caseId={detail} agentTaluk={props.session.talukName || ''} />
+    if (section === 'cases') return <CasesPage role="agent" agentTaluk={props.session.talukName || ''} />
+    return <AgentDashboard deposits={props.deposits} agentTaluk={props.session.talukName || ''} />
   }
   if (section === 'cases' && detail) return <CaseDetail caseId={detail} admin />
   if (section === 'cases') return <AdminCases online={props.online} notify={props.notify} reload={props.reload} />
@@ -397,7 +397,7 @@ function MemberDashboard({ session }: { session: Session }) {
   </div>
 }
 
-function AgentDashboard({ deposits }: { deposits: DepositRecord[] }) {
+function AgentDashboard({ deposits, agentTaluk }: { deposits: DepositRecord[]; agentTaluk: string }) {
   const navigate = useNavigate()
   const { cases, members } = useAppData()
   const deathCasePending = members.reduce((sum, member) => sum + member.pending, 0)
@@ -414,7 +414,7 @@ function AgentDashboard({ deposits }: { deposits: DepositRecord[] }) {
     </section>
     <section className="readonly-banner"><ShieldCheck /><div><strong>View-only access</strong><span>Collection entries are recorded and verified by the administrator.</span></div></section>
     <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
-    <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agent key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
+    <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agentTaluk={agentTaluk} key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
     <SectionHeading title="Payment history" action="View all" onAction={() => navigate('/agent/handovers')} />
     <div className="list-surface">{deposits.slice(0, 2).map(d => <DepositRow key={d.id} deposit={d} />)}</div>
   </div>
@@ -479,7 +479,7 @@ function AdminDashboard({ deposits }: { deposits: DepositRecord[] }) {
   </div>
 }
 
-function CasesPage({ role }: { role: Role }) {
+function CasesPage({ role, agentTaluk }: { role: Role; agentTaluk?: string }) {
   const navigate = useNavigate(); const { cases, memberDues } = useAppData()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | 'Open' | 'Closed'>('All')
@@ -488,7 +488,7 @@ function CasesPage({ role }: { role: Role }) {
     const term = query.trim().toLowerCase()
     return matchesStatus && (!term || item.caseNumber.toLowerCase().includes(term) || item.name.toLowerCase().includes(term) || item.taluk.toLowerCase().includes(term))
   })
-  return <div className="page-stack"><SearchBox value={query} onChange={setQuery} placeholder="Search cases or member name" /><div className="filter-row">{(['All', 'Open', 'Closed'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status === 'All' ? 'All cases' : status}</button>)}</div>{visible.length ? <div className="case-list">{visible.map(item => <CaseCard key={item.id} item={item} memberDue={role === 'member' ? memberDues.find(d => d.caseId === item.id) : undefined} agent={role === 'agent'} onClick={() => navigate(`/${role}/cases/${item.id}`)} />)}</div> : <div className="empty-review"><HeartHandshake /><h3>No cases found</h3><p>Try another search or status filter.</p></div>}</div>
+  return <div className="page-stack"><SearchBox value={query} onChange={setQuery} placeholder="Search cases or member name" /><div className="filter-row">{(['All', 'Open', 'Closed'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status === 'All' ? 'All cases' : status}</button>)}</div>{visible.length ? <div className="case-list">{visible.map(item => <CaseCard key={item.id} item={item} memberDue={role === 'member' ? memberDues.find(d => d.caseId === item.id) : undefined} agentTaluk={role === 'agent' ? agentTaluk : undefined} onClick={() => navigate(`/${role}/cases/${item.id}`)} />)}</div> : <div className="empty-review"><HeartHandshake /><h3>No cases found</h3><p>Try another search or status filter.</p></div>}</div>
 }
 
 function AdminCases({ online, notify, reload }: { online: boolean; notify: (message: string) => void; reload: () => Promise<void> }) {
@@ -506,11 +506,15 @@ function AdminCases({ online, notify, reload }: { online: boolean; notify: (mess
   return <div className="page-stack"><div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search case number or member" /><button className="primary" disabled={!online} onClick={() => setModal(true)}><Plus /> Create case</button></div><div className="filter-row">{(['All', 'Open', 'Closed', 'Cancelled'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status === 'All' ? 'All cases' : status}</button>)}</div>{visible.length ? <div className="case-list admin-cases">{visible.map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/admin/cases/${item.id}`)} />)}</div> : <div className="empty-review"><HeartHandshake /><h3>No cases found</h3><p>Try another search or status filter.</p></div>}{modal && <CreateCaseModal onClose={() => setModal(false)} onPublish={async caseId => { setModal(false); await reload(); notify('Death case published. WhatsApp messages are ready.'); navigate(`/admin/cases/${caseId}`) }} />}</div>
 }
 
-function CaseDetail({ caseId, member = false, admin = false }: { caseId: string; member?: boolean; admin?: boolean }) {
+function CaseDetail({ caseId, member = false, admin = false, agentTaluk }: { caseId: string; member?: boolean; admin?: boolean; agentTaluk?: string }) {
   const navigate = useNavigate(); const { cases, memberDues } = useAppData(); const item = cases.find(c => c.id === caseId)
   if (!item) return <div className="empty-review"><HeartHandshake /><h3>Case not found</h3></div>
   const due = memberDues.find(d => d.caseId === item.id)
-  return <div className="page-stack detail-page"><button className="back-link" onClick={() => navigate(-1)}><ArrowLeft /> Back to cases</button><section className="case-hero"><CasePhoto item={item} large /><div><span className="case-number">{item.caseNumber}</span><h2>{item.name}</h2><p>{item.details}</p><div className="meta-row"><span><CalendarDays /> {item.deathDate}</span><span><MapPinIcon /> {item.taluk}</span><Status value={item.status} /></div></div></section>{member && due ? <><SectionHeading title="Your contribution" /><section className="contribution-detail"><div><span>Required</span><strong>{<Money value={due.required} />}</strong></div><div><span>Collected</span><strong>{<Money value={due.collected} />}</strong></div><div><span>Verified</span><strong>{<Money value={due.verified} />}</strong></div><div><span>Still to give</span><strong>{<Money value={due.required - due.collected} />}</strong></div></section><LedgerBreakdown required={due.required} collected={due.collected} verified={due.verified} /></> : <><section className="metric-grid compact"><Metric icon={IndianRupee} label="Required total" value={<Money value={item.requiredTotal} />} /><Metric icon={IndianRupee} label="Collected" value={<Money value={item.collected} />} tone="amber" /><Metric icon={BadgeCheck} label="Verified" value={<Money value={item.verified} />} tone="green" /><Metric icon={Clock3} label="Awaiting" value={<Money value={item.collected - item.verified} />} tone="blue" /></section><SectionHeading title="Taluk progress" />{item.talukProgress.length ? <div className="taluk-progress">{item.talukProgress.map(progress => { const percent = progress.required ? progress.collected / progress.required * 100 : 0; return <div key={progress.id}><div><strong>{progress.name}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No obligations were created for this case.</p>}{admin && <CaseWhatsAppList item={item} />}</>}</div>
+  const talukProgress = agentTaluk !== undefined ? item.talukProgress.filter(progress => progress.name === agentTaluk) : item.talukProgress
+  const scopedTotals = agentTaluk !== undefined
+    ? talukProgress[0] || { required: 0, collected: 0, verified: 0 }
+    : { required: item.requiredTotal, collected: item.collected, verified: item.verified }
+  return <div className="page-stack detail-page"><button className="back-link" onClick={() => navigate(-1)}><ArrowLeft /> Back to cases</button><section className="case-hero"><CasePhoto item={item} large /><div><span className="case-number">{item.caseNumber}</span><h2>{item.name}</h2><p>{item.details}</p><div className="meta-row"><span><CalendarDays /> {item.deathDate}</span><span><MapPinIcon /> {item.taluk}</span><Status value={item.status} /></div></div></section>{member && due ? <><SectionHeading title="Your contribution" /><section className="contribution-detail"><div><span>Required</span><strong>{<Money value={due.required} />}</strong></div><div><span>Collected</span><strong>{<Money value={due.collected} />}</strong></div><div><span>Verified</span><strong>{<Money value={due.verified} />}</strong></div><div><span>Still to give</span><strong>{<Money value={due.required - due.collected} />}</strong></div></section><LedgerBreakdown required={due.required} collected={due.collected} verified={due.verified} /></> : <><section className="metric-grid compact"><Metric icon={IndianRupee} label="Required total" value={<Money value={scopedTotals.required} />} /><Metric icon={IndianRupee} label="Collected" value={<Money value={scopedTotals.collected} />} tone="amber" /><Metric icon={BadgeCheck} label="Verified" value={<Money value={scopedTotals.verified} />} tone="green" /><Metric icon={Clock3} label="Awaiting" value={<Money value={scopedTotals.collected - scopedTotals.verified} />} tone="blue" /></section><SectionHeading title={agentTaluk !== undefined ? `${agentTaluk || 'Assigned taluk'} progress` : 'Taluk progress'} />{talukProgress.length ? <div className="taluk-progress">{talukProgress.map(progress => { const percent = progress.required ? progress.collected / progress.required * 100 : 0; return <div key={progress.id}><div><strong>{progress.name}</strong><span>{Math.round(percent)}% collected</span></div><Progress value={percent} /></div> })}</div> : <p className="subtle">No obligations were created for {agentTaluk !== undefined ? 'this taluk' : 'this case'}.</p>}{admin && <CaseWhatsAppList item={item} />}</>}</div>
 }
 
 function CaseWhatsAppList({ item }: { item: CaseRecord }) {
@@ -1360,9 +1364,15 @@ function HandoverStatus({ value }: { value: DepositRecord['status'] }) {
   return <Status value={label} />
 }
 
-function CaseCard({ item, onClick, memberDue, agent = false }: { item: CaseRecord; onClick: () => void; memberDue?: DueRecord; agent?: boolean }) {
-  const pct = item.requiredTotal ? Math.min((item.collected / item.requiredTotal) * 100, 100) : 0
-  return <article className="case-card" role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}><div className="case-card-main"><CasePhoto item={item} /><div><span className="case-number">{item.caseNumber}</span><h3>{item.name}</h3><p><CalendarDays /> {item.deathDate} · {item.taluk}</p></div><ChevronRight className="chevron" /></div>{memberDue ? <div className="case-obligation"><div><span>Your contribution</span><strong>{<Money value={memberDue.required} />}</strong></div><Status value={getMoneyStatus(memberDue.required, memberDue.collected, memberDue.verified)} /></div> : <div className="case-progress"><div><span>{agent ? 'Taluk collected' : 'Collection progress'}</span><strong>{Math.round(pct)}%</strong></div><Progress value={pct} /><small>{<Money value={item.collected} />} collected · {<Money value={item.verified} />} verified</small></div>}</article>
+function CaseCard({ item, onClick, memberDue, agentTaluk }: { item: CaseRecord; onClick: () => void; memberDue?: DueRecord; agentTaluk?: string }) {
+  const progress = agentTaluk !== undefined
+    ? item.talukProgress.find(entry => entry.name === agentTaluk)
+    : undefined
+  const required = agentTaluk !== undefined ? progress?.required || 0 : item.requiredTotal
+  const collected = agentTaluk !== undefined ? progress?.collected || 0 : item.collected
+  const verified = agentTaluk !== undefined ? progress?.verified || 0 : item.verified
+  const pct = required ? Math.min((collected / required) * 100, 100) : 0
+  return <article className="case-card" role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}><div className="case-card-main"><CasePhoto item={item} /><div><span className="case-number">{item.caseNumber}</span><h3>{item.name}</h3><p><CalendarDays /> {item.deathDate} · {item.taluk}</p></div><ChevronRight className="chevron" /></div>{memberDue ? <div className="case-obligation"><div><span>Your contribution</span><strong>{<Money value={memberDue.required} />}</strong></div><Status value={getMoneyStatus(memberDue.required, memberDue.collected, memberDue.verified)} /></div> : <div className="case-progress"><div><span>{agentTaluk !== undefined ? 'Taluk collected' : 'Collection progress'}</span><strong>{Math.round(pct)}%</strong></div><Progress value={pct} /><small>{<Money value={collected} />} collected · {<Money value={verified} />} verified</small></div>}</article>
 }
 
 function LedgerBreakdown({ required, collected, verified }: { required: number; collected: number; verified: number }) {

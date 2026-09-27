@@ -64,7 +64,7 @@ async def signed_case_photo_urls(paths: list[str]) -> dict[str, str]:
     return urls
 
 
-async def case_rows(db: AsyncSession) -> list[dict]:
+async def case_rows(db: AsyncSession, taluk_id=None) -> list[dict]:
     identity_rows = (
         await db.execute(
             select(DeathCase, Profile.full_name, Taluk.name)
@@ -78,7 +78,10 @@ async def case_rows(db: AsyncSession) -> list[dict]:
     photo_urls = await signed_case_photo_urls(
         [item.photo_object_path for item, _, _ in identity_rows if item.photo_object_path]
     )
-    obligations = (await db.scalars(select(CaseObligation))).all()
+    obligation_query = select(CaseObligation)
+    if taluk_id is not None:
+        obligation_query = obligation_query.where(CaseObligation.taluk_id_snapshot == taluk_id)
+    obligations = (await db.scalars(obligation_query)).all()
     taluk_ids = {obligation.taluk_id_snapshot for obligation in obligations}
     taluk_names = dict((await db.execute(
         select(Taluk.id, Taluk.name).where(Taluk.id.in_(taluk_ids))
@@ -287,7 +290,7 @@ async def workspace(
     }
     data = {
         "profile": profile_data,
-        "cases": await case_rows(db),
+        "cases": [],
         "members": [],
         "dues": [],
         "collections": [],
@@ -324,6 +327,7 @@ async def workspace(
     ]
 
     if actor.role == UserRole.MEMBER:
+        data["cases"] = await case_rows(db)
         member = await db.scalar(select(Member).where(Member.profile_id == actor.profile_id))
         if member is None:
             raise AppError("FORBIDDEN_RESOURCE", "Member profile was not found.", 404)
@@ -360,6 +364,7 @@ async def workspace(
             )
         )
         if assignment:
+            data["cases"] = await case_rows(db, assignment.taluk_id)
             taluk = await db.get(Taluk, assignment.taluk_id)
             bank = await db.scalar(
                 select(BankAccount).where(
@@ -378,6 +383,7 @@ async def workspace(
         data["collections"] = await collection_rows(db, actor)
         data["deposits"] = await deposit_rows(db, actor)
     else:
+        data["cases"] = await case_rows(db)
         data["members"] = await member_rows(db, actor)
         data["collections"] = await collection_rows(db, actor)
         data["deposits"] = await deposit_rows(db, actor)
