@@ -289,6 +289,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .payment-list strong { font-size: 11px; }
 .payment-list span, .payment-list small { color: var(--muted); font-size: 9px; }
 .payment-list article > div:last-child { display: grid; justify-items: end; gap: 5px; }
+.load-more-row { display: flex; justify-content: center; }
 .permanent-hero { background: #174c2b; color: white; padding: 26px 22px; border-radius: 7px; text-align: center; display: grid; justify-items: center; }
 .permanent-seal { width: 56px; height: 56px; border: 1px solid rgba(255,255,255,.35); border-radius: 50%; display: grid; place-items: center; margin-bottom: 12px; color: #f6c846; }
 .permanent-seal svg { width: 27px; height: 27px; }

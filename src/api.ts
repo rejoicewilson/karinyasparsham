@@ -28,6 +28,15 @@ export interface Workspace {
   case_whatsapp_tracking: Record<string, any>[]
 }
 
+export interface AgentCollectionPage {
+  items: Record<string, any>[]
+  total: number
+  verified_amount: number | string
+  offset: number
+  limit: number
+  has_more: boolean
+}
+
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) {
     super(message)
@@ -76,6 +85,15 @@ export const authApi = {
 
 export const workspaceApi = {
   load: () => apiRequest<Workspace>('/workspace'),
+  agentCollections: (params: { offset?: number; limit?: number; collectionType?: 'DEATH_CONTRIBUTION' | 'PERMANENT_MEMBERSHIP'; query?: string }) => {
+    const search = new URLSearchParams({
+      offset: String(params.offset || 0),
+      limit: String(params.limit || 50),
+    })
+    if (params.collectionType) search.set('collection_type', params.collectionType)
+    if (params.query?.trim()) search.set('query', params.query.trim())
+    return apiRequest<AgentCollectionPage>(`/agent/collections?${search}`)
+  },
   createAdminCollectionBatch: (payload: Record<string, unknown>) => apiRequest<Record<string, any>>('/admin/collection-batches', {
     method: 'POST', body: JSON.stringify(payload)
   }),

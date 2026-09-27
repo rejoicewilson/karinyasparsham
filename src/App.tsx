@@ -67,6 +67,15 @@ const toSession = (profile: ApiProfile): Session => ({
   memberCode: profile.member_code || undefined, agent: profile.agent
 })
 
+const mapCollectionRecord = (item: Record<string, any>): CollectionRecord => ({
+  id: String(item.id), receipt: String(item.receipt_number), memberId: String(item.member_id), member: String(item.member_name),
+  caseId: item.case_id ? String(item.case_id) : undefined, label: String(item.label),
+  type: item.collection_type === 'PERMANENT_MEMBERSHIP' ? 'Permanent membership' : 'Death contribution',
+  amount: Number(item.amount), method: titleCase(String(item.method)) as CollectionRecord['method'],
+  date: dateText(String(item.collected_at)), status: titleCase(String(item.status)) as CollectionRecord['status'],
+  collectorName: String(item.collector_name || 'Collection agent'),
+})
+
 function mapWorkspace(raw: Workspace) {
   const cases: CaseRecord[] = raw.cases.map((item, index) => ({
     id: String(item.id), caseNumber: String(item.case_number), name: String(item.deceased_name),
@@ -103,14 +112,7 @@ function mapWorkspace(raw: Workspace) {
     name: cases.find(c => c.id === String(item.case_id))?.name || String(item.label), caseNumber: String(item.case_number),
     required: Number(item.required_amount), collected: Number(item.collected_amount), verified: Number(item.verified_amount)
   }))
-  const collections: CollectionRecord[] = raw.collections.map(item => ({
-    id: String(item.id), receipt: String(item.receipt_number), memberId: String(item.member_id), member: String(item.member_name),
-    caseId: item.case_id ? String(item.case_id) : undefined, label: String(item.label),
-    type: item.collection_type === 'PERMANENT_MEMBERSHIP' ? 'Permanent membership' : 'Death contribution',
-    amount: Number(item.amount), method: titleCase(String(item.method)) as CollectionRecord['method'],
-    date: dateText(String(item.collected_at)), status: titleCase(String(item.status)) as CollectionRecord['status'],
-    collectorName: String(item.collector_name || 'Collection agent'),
-  }))
+  const collections: CollectionRecord[] = raw.collections.map(mapCollectionRecord)
   const deposits: DepositRecord[] = raw.deposits.map(item => ({
     id: String(item.id), number: String(item.deposit_number), agent: String(item.agent_name), agentPhone: String(item.agent_phone || ''), taluk: String(item.taluk_name),
     bankName: String(item.bank_name || 'Assigned bank'),
@@ -137,7 +139,7 @@ function mapWorkspace(raw: Workspace) {
 const pageTitles: Record<string, string> = {
   dashboard: 'Overview', cases: 'Death cases', dues: 'Outstanding', payments: 'Payment history',
   permanent: 'Account', notifications: 'Notifications', account: 'Account',
-  collect: 'Payments', handovers: 'Payments', deposits: 'Payments', members: 'Members', reports: 'Reports',
+  collect: 'Collections', handovers: 'Collections', deposits: 'Collections', members: 'Members', reports: 'Reports',
   taluks: 'Organization'
 }
 
@@ -294,7 +296,7 @@ const navByRole: Record<Role, NavItem[]> = {
   ],
   agent: [
     { key: 'dashboard', label: 'Home', icon: Home }, { key: 'cases', label: 'Cases', icon: HeartHandshake },
-    { key: 'handovers', label: 'Payments', icon: Receipt }, { key: 'members', label: 'Members', icon: Users },
+    { key: 'handovers', label: 'Collections', icon: Receipt }, { key: 'members', label: 'Members', icon: Users },
     { key: 'account', label: 'Account', icon: UserRound }
   ],
   admin: [
@@ -355,7 +357,7 @@ function RoleRouter(props: {
     return <MemberDashboard session={props.session} />
   }
   if (props.role === 'agent') {
-    if (section === 'collect' || section === 'handovers' || section === 'deposits') return <AgentPayments collections={props.collections} deposits={props.deposits} session={props.session} />
+    if (section === 'collect' || section === 'handovers' || section === 'deposits') return <AgentPayments deposits={props.deposits} session={props.session} />
     if (section === 'members' && detail) return <MemberDetail id={detail} />
     if (section === 'members') return <MembersPage role="agent" />
     if (section === 'cases' && detail) return <CaseDetail caseId={detail} agentTaluk={props.session.talukName || ''} />
@@ -412,7 +414,6 @@ function AgentDashboard({ collections, agentTaluk }: { collections: CollectionRe
       <Metric icon={ShieldCheck} label="Permanent membership pending" value={<Money value={permanentPending} />} tone="amber" />
       <Metric icon={Clock3} label="Active death cases" value={String(activeCases)} tone="blue" />
     </section>
-    <section className="readonly-banner"><ShieldCheck /><div><strong>View-only access</strong><span>Collection entries are recorded and verified by the administrator.</span></div></section>
     <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
     <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agentTaluk={agentTaluk} key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
     <SectionHeading title="Collection history" action="View all" onAction={() => navigate('/agent/handovers')} />
@@ -420,20 +421,56 @@ function AgentDashboard({ collections, agentTaluk }: { collections: CollectionRe
   </div>
 }
 
-function AgentPayments({ collections, deposits, session }: { collections: CollectionRecord[]; deposits: DepositRecord[]; session: Session }) {
+function AgentPayments({ deposits, session }: { deposits: DepositRecord[]; session: Session }) {
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'All' | 'Verified' | 'Awaiting'>('All')
-  const term = query.trim().toLowerCase()
-  const visible = collections.filter(item => {
-    const matchesStatus = filter === 'All' || (filter === 'Verified' ? item.status === 'Verified' : item.status !== 'Verified')
-    return matchesStatus && (!term || item.member.toLowerCase().includes(term) || item.label.toLowerCase().includes(term) || item.receipt.toLowerCase().includes(term))
-  })
+  const [filter, setFilter] = useState<'All' | 'Death cases' | 'Permanent membership'>('All')
+  const [records, setRecords] = useState<CollectionRecord[]>([])
+  const [total, setTotal] = useState(0)
+  const [verifiedAmount, setVerifiedAmount] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const ownBatches = deposits.filter(item => item.agent === session.name)
+  const collectionType = filter === 'Death cases' ? 'DEATH_CONTRIBUTION' : filter === 'Permanent membership' ? 'PERMANENT_MEMBERSHIP' : undefined
+
+  useEffect(() => {
+    let active = true
+    setLoading(true); setError(''); setRecords([])
+    const timer = window.setTimeout(() => {
+      workspaceApi.agentCollections({ limit: 50, collectionType, query }).then(page => {
+        if (!active) return
+        setRecords(page.items.map(mapCollectionRecord)); setTotal(page.total)
+        setVerifiedAmount(Number(page.verified_amount)); setHasMore(page.has_more); setLoading(false)
+      }).catch(reason => {
+        if (!active) return
+        setError(reason instanceof Error ? reason.message : 'Unable to load collection history.'); setLoading(false)
+      })
+    }, 250)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [collectionType, query])
+
+  const loadMore = async () => {
+    setLoading(true); setError('')
+    try {
+      const page = await workspaceApi.agentCollections({ offset: records.length, limit: 50, collectionType, query })
+      setRecords(current => [...current, ...page.items.map(mapCollectionRecord)])
+      setTotal(page.total); setVerifiedAmount(Number(page.verified_amount)); setHasMore(page.has_more)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load more collection records.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return <div className="page-stack">
-    <section className="readonly-banner"><ShieldCheck /><div><strong>Payment records</strong><span>These records are maintained by the administrator and cannot be changed from an agent account.</span></div></section>
+    <section className="readonly-banner"><ShieldCheck /><div><strong>Collection history</strong><span>Administrator-recorded collections for {session.talukName || 'the assigned taluk'}.</span></div></section>
+    <section className="metric-grid"><Metric icon={BadgeCheck} label="Verified collections" value={<Money value={verifiedAmount} />} tone="green" /><Metric icon={Receipt} label="Collection records" value={String(total)} /></section>
     <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search member, case, or receipt" /></div>
-    <div className="filter-row">{(['All', 'Verified', 'Awaiting'] as const).map(value => <button key={value} className={`chip ${filter === value ? 'active' : ''}`} onClick={() => setFilter(value)}>{value}</button>)}</div>
-    {visible.length ? <div className="payment-list">{visible.map(item => <PaymentRecordRow key={item.id} item={item} />)}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Payment records entered by the administrator will appear here.</p></div>}
+    <div className="filter-row">{(['All', 'Death cases', 'Permanent membership'] as const).map(value => <button key={value} className={`chip ${filter === value ? 'active' : ''}`} onClick={() => setFilter(value)}>{value}</button>)}</div>
+    {records.length ? <div className="payment-list">{records.map(item => <PaymentRecordRow key={item.id} item={item} />)}</div> : !loading && <div className="empty-review"><Receipt /><h3>No collections found</h3><p>Try another member, case, receipt, or collection type.</p></div>}
+    {loading && !records.length && <p className="subtle">Loading collection history...</p>}
+    {error && <p className="form-error"><AlertCircle />{error}</p>}
+    {hasMore && <div className="load-more-row"><button className="secondary" disabled={loading} onClick={loadMore}>{loading ? 'Loading...' : `Load more (${records.length} of ${total})`}</button></div>}
     {ownBatches.length > 0 && <><SectionHeading title="Historical handovers" /><div className="list-surface deposits-full">{ownBatches.map(item => <DepositRow key={item.id} deposit={item} />)}</div></>}
   </div>
 }
