@@ -360,7 +360,7 @@ function RoleRouter(props: {
     if (section === 'members') return <MembersPage role="agent" />
     if (section === 'cases' && detail) return <CaseDetail caseId={detail} />
     if (section === 'cases') return <CasesPage role="agent" />
-    return <AgentDashboard collections={props.collections} deposits={props.deposits} />
+    return <AgentDashboard deposits={props.deposits} />
   }
   if (section === 'cases' && detail) return <CaseDetail caseId={detail} admin />
   if (section === 'cases') return <AdminCases online={props.online} notify={props.notify} reload={props.reload} />
@@ -397,19 +397,20 @@ function MemberDashboard({ session }: { session: Session }) {
   </div>
 }
 
-function AgentDashboard({ collections, deposits }: { collections: CollectionRecord[]; deposits: DepositRecord[] }) {
+function AgentDashboard({ deposits }: { deposits: DepositRecord[] }) {
   const navigate = useNavigate()
   const { cases, members } = useAppData()
-  const unbatched = collections.filter(c => c.status === 'Recorded').reduce((sum, c) => sum + c.amount, 0)
-  const totalOutstanding = members.reduce((sum, member) => sum + member.pending + Math.max(
+  const deathCasePending = members.reduce((sum, member) => sum + member.pending, 0)
+  const permanentPending = members.reduce((sum, member) => sum + Math.max(
     (member.permanentAccountId ? member.permanentTarget || 0 : 0) - (member.permanentCollected || 0), 0
   ), 0)
+  const activeCases = cases.filter(item => item.status === 'Open').length
   return <div className="page-stack">
     <section className="metric-grid agent-metrics">
       <Metric icon={Users} label="Assigned members" value={String(members.length)} />
-      <Metric icon={IndianRupee} label="Total pending" value={<Money value={totalOutstanding} />} tone="red" />
-      <Metric icon={WalletCards} label="Awaiting handover" value={<Money value={unbatched} />} tone="amber" />
-      <Metric icon={Clock3} label="Awaiting receipt" value={String(deposits.filter(d => d.status === 'Submitted').length)} tone="blue" />
+      <Metric icon={HeartHandshake} label="Death-case pending" value={<Money value={deathCasePending} />} tone="red" />
+      <Metric icon={ShieldCheck} label="Permanent membership pending" value={<Money value={permanentPending} />} tone="amber" />
+      <Metric icon={Clock3} label="Active death cases" value={String(activeCases)} tone="blue" />
     </section>
     <section className="readonly-banner"><ShieldCheck /><div><strong>View-only access</strong><span>Collection entries are recorded and verified by the administrator.</span></div></section>
     <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
