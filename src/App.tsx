@@ -360,7 +360,7 @@ function RoleRouter(props: {
     if (section === 'members') return <MembersPage role="agent" />
     if (section === 'cases' && detail) return <CaseDetail caseId={detail} agentTaluk={props.session.talukName || ''} />
     if (section === 'cases') return <CasesPage role="agent" agentTaluk={props.session.talukName || ''} />
-    return <AgentDashboard deposits={props.deposits} agentTaluk={props.session.talukName || ''} />
+    return <AgentDashboard collections={props.collections} agentTaluk={props.session.talukName || ''} />
   }
   if (section === 'cases' && detail) return <CaseDetail caseId={detail} admin />
   if (section === 'cases') return <AdminCases online={props.online} notify={props.notify} reload={props.reload} />
@@ -397,7 +397,7 @@ function MemberDashboard({ session }: { session: Session }) {
   </div>
 }
 
-function AgentDashboard({ deposits, agentTaluk }: { deposits: DepositRecord[]; agentTaluk: string }) {
+function AgentDashboard({ collections, agentTaluk }: { collections: CollectionRecord[]; agentTaluk: string }) {
   const navigate = useNavigate()
   const { cases, members } = useAppData()
   const deathCasePending = members.reduce((sum, member) => sum + member.pending, 0)
@@ -415,8 +415,8 @@ function AgentDashboard({ deposits, agentTaluk }: { deposits: DepositRecord[]; a
     <section className="readonly-banner"><ShieldCheck /><div><strong>View-only access</strong><span>Collection entries are recorded and verified by the administrator.</span></div></section>
     <SectionHeading title="Current cases" action="View cases" onAction={() => navigate('/agent/cases')} />
     <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard agentTaluk={agentTaluk} key={item.id} item={item} onClick={() => navigate(`/agent/cases/${item.id}`)} />)}</div>
-    <SectionHeading title="Payment history" action="View all" onAction={() => navigate('/agent/handovers')} />
-    <div className="list-surface">{deposits.slice(0, 2).map(d => <DepositRow key={d.id} deposit={d} />)}</div>
+    <SectionHeading title="Collection history" action="View all" onAction={() => navigate('/agent/handovers')} />
+    {collections.length ? <div className="payment-list">{collections.slice(0, 2).map(item => <PaymentRecordRow key={item.id} item={item} />)}</div> : <p className="subtle">No collection records have been entered.</p>}
   </div>
 }
 
@@ -433,9 +433,13 @@ function AgentPayments({ collections, deposits, session }: { collections: Collec
     <section className="readonly-banner"><ShieldCheck /><div><strong>Payment records</strong><span>These records are maintained by the administrator and cannot be changed from an agent account.</span></div></section>
     <div className="toolbar"><SearchBox value={query} onChange={setQuery} placeholder="Search member, case, or receipt" /></div>
     <div className="filter-row">{(['All', 'Verified', 'Awaiting'] as const).map(value => <button key={value} className={`chip ${filter === value ? 'active' : ''}`} onClick={() => setFilter(value)}>{value}</button>)}</div>
-    {visible.length ? <div className="payment-list">{visible.map(item => <article key={item.id}><div className={`payment-icon ${item.status.toLowerCase()}`}>{item.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{item.member}</strong><span>{item.label} · {item.receipt}</span><small>{item.method} · {item.date}</small></div><div><strong><Money value={item.amount} /></strong><Status value={item.status === 'Verified' ? 'Verified' : 'Awaiting Verification'} /></div></article>)}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Payment records entered by the administrator will appear here.</p></div>}
+    {visible.length ? <div className="payment-list">{visible.map(item => <PaymentRecordRow key={item.id} item={item} />)}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Payment records entered by the administrator will appear here.</p></div>}
     {ownBatches.length > 0 && <><SectionHeading title="Historical handovers" /><div className="list-surface deposits-full">{ownBatches.map(item => <DepositRow key={item.id} deposit={item} />)}</div></>}
   </div>
+}
+
+function PaymentRecordRow({ item }: { item: CollectionRecord }) {
+  return <article><div className={`payment-icon ${item.status.toLowerCase()}`}>{item.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{item.member}</strong><span>{item.label} · {item.receipt}</span><small>{item.method} · {item.date}</small></div><div><strong><Money value={item.amount} /></strong><Status value={item.status === 'Verified' ? 'Verified' : 'Awaiting Verification'} /></div></article>
 }
 
 function AdminDashboard({ deposits }: { deposits: DepositRecord[] }) {
