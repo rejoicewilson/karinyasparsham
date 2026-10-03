@@ -288,6 +288,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .payment-list { display: grid; background: white; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .payment-list article { min-height: 82px; border-bottom: 1px solid #edf0ee; padding: 13px; display: flex; align-items: center; gap: 11px; }
 .payment-list article:last-child { border-bottom: 0; }
+.payment-list article.interactive { cursor: pointer; transition: background .16s ease, box-shadow .16s ease; }
+.payment-list article.interactive:hover { background: #f8fbf9; box-shadow: inset 3px 0 var(--green); }
+.payment-list article.interactive:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
 .payment-icon { width: 36px; height: 36px; border-radius: 50%; background: #fff2d3; color: #8c6400; display: grid; place-items: center; }
 .payment-icon.verified { background: #e4f2e8; color: var(--green); }
 .payment-icon svg { width: 17px; }
@@ -295,6 +298,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .payment-list strong { font-size: 11px; }
 .payment-list span, .payment-list small { color: var(--muted); font-size: 9px; }
 .payment-list article > div:last-child { display: grid; justify-items: end; gap: 5px; }
+.payment-row-chevron { width: 15px; color: #8a968e; }
 .load-more-row { display: flex; justify-content: center; }
 .permanent-hero { background: #174c2b; color: white; padding: 26px 22px; border-radius: 7px; text-align: center; display: grid; justify-items: center; }
 .permanent-seal { width: 56px; height: 56px; border: 1px solid rgba(255,255,255,.35); border-radius: 50%; display: grid; place-items: center; margin-bottom: 12px; color: #f6c846; }
@@ -559,6 +563,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 }
 
 @media (min-width: 700px) {
+  .payment-history-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .login-page { grid-template-columns: minmax(300px, 46%) 1fr; }
   .login-brand { display: flex; position: relative; overflow: hidden; flex-direction: column; justify-content: center; align-items: center; gap: 20px; color: white; background: #123a22; }
   .login-brand::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 40%, rgba(255,255,255,.1), transparent 45%), linear-gradient(150deg, transparent 58%, rgba(233,173,20,.12) 58%); }

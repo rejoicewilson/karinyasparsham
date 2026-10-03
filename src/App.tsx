@@ -705,15 +705,48 @@ function MemberDues() {
 }
 
 function MemberPayments({ collections }: { collections: CollectionRecord[] }) {
+  const navigate = useNavigate()
+  const { cases } = useAppData()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | 'Awaiting' | 'Verified'>('All')
+  const caseById = new Map(cases.map(item => [item.id, item]))
+  const verifiedRecords = collections.filter(item => item.status === 'Verified')
+  const awaitingRecords = collections.filter(item => item.status !== 'Verified')
+  const verifiedAmount = verifiedRecords.reduce((sum, item) => sum + item.amount, 0)
+  const awaitingAmount = awaitingRecords.reduce((sum, item) => sum + item.amount, 0)
   const mine = collections.filter(item => {
     const awaiting = item.status !== 'Verified'
     const matchesStatus = filter === 'All' || (filter === 'Awaiting' ? awaiting : !awaiting)
     const term = query.trim().toLowerCase()
-    return matchesStatus && (!term || item.label.toLowerCase().includes(term) || item.receipt.toLowerCase().includes(term) || String(item.collectorName || '').toLowerCase().includes(term))
+    const caseRecord = item.caseId ? caseById.get(item.caseId) : undefined
+    return matchesStatus && (!term || item.label.toLowerCase().includes(term) || item.receipt.toLowerCase().includes(term) || String(item.collectorName || '').toLowerCase().includes(term) || caseRecord?.caseNumber.toLowerCase().includes(term) || caseRecord?.name.toLowerCase().includes(term))
   })
-  return <div className="page-stack"><SearchBox value={query} onChange={setQuery} placeholder="Search payments" /><div className="filter-row">{(['All', 'Awaiting', 'Verified'] as const).map(status => <button key={status} className={`chip ${filter === status ? 'active' : ''}`} onClick={() => setFilter(status)}>{status}</button>)}</div>{mine.length ? <div className="payment-list">{mine.map(c => <article key={c.id}><div className={`payment-icon ${c.status.toLowerCase()}`}>{c.status === 'Verified' ? <Check /> : <Clock3 />}</div><div><strong>{c.label}</strong><span>{c.receipt} · {c.date}</span><small>{c.method} · Collected by {c.collectorName}</small></div><div><strong>{<Money value={c.amount} />}</strong><Status value={c.status === 'Batched' || c.status === 'Recorded' ? 'Awaiting Verification' : 'Verified'} /></div></article>)}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Try another search or status filter.</p></div>}</div>
+  const filters = [
+    { value: 'All', label: 'All', count: collections.length },
+    { value: 'Awaiting', label: 'Awaiting verification', count: awaitingRecords.length },
+    { value: 'Verified', label: 'Verified', count: verifiedRecords.length },
+  ] as const
+  return <div className="page-stack">
+    <section className="metric-grid payment-history-metrics">
+      <Metric icon={BadgeCheck} label="Verified amount" value={<Money value={verifiedAmount} />} detail={`${verifiedRecords.length} verified records`} tone="green" />
+      <Metric icon={Clock3} label="Awaiting verification" value={<Money value={awaitingAmount} />} detail={`${awaitingRecords.length} awaiting records`} tone="amber" />
+      <Metric icon={Receipt} label="Payment records" value={String(collections.length)} detail="Complete collection history" />
+    </section>
+    <SearchBox value={query} onChange={setQuery} placeholder="Search case, receipt, or collector" />
+    <div className="filter-row">{filters.map(item => <button key={item.value} className={`chip ${filter === item.value ? 'active' : ''}`} onClick={() => setFilter(item.value)}>{item.label} ({item.count})</button>)}</div>
+    {mine.length ? <div className="payment-list">{mine.map(c => {
+      const caseRecord = c.caseId ? caseById.get(c.caseId) : undefined
+      const historical = c.receipt.includes('-HIST-') || c.label.toLowerCase().startsWith('historical helping request')
+      const title = caseRecord?.name || c.label.replace(/^Historical helping request for\s+/i, '')
+      const context = caseRecord?.caseNumber || c.type
+      const openCase = c.caseId ? () => navigate(`/member/cases/${c.caseId}`) : undefined
+      return <article className={openCase ? 'interactive' : ''} key={c.id} role={openCase ? 'button' : undefined} tabIndex={openCase ? 0 : undefined} onClick={openCase} onKeyDown={event => { if (openCase && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openCase() } }}>
+        <div className={`payment-icon ${c.status.toLowerCase()}`}>{c.status === 'Verified' ? <Check /> : <Clock3 />}</div>
+        <div><strong>{title}</strong><span>{context} · {c.date}</span><small>{historical ? 'Historical record' : c.method} · Receipt {c.receipt} · Collected by {c.collectorName}</small></div>
+        <div><strong>{<Money value={c.amount} />}</strong><Status value={c.status === 'Batched' || c.status === 'Recorded' ? 'Awaiting Verification' : 'Verified'} />{openCase && <ChevronRight className="payment-row-chevron" />}</div>
+      </article>
+    })}</div> : <div className="empty-review"><Receipt /><h3>No payments found</h3><p>Try another case, receipt, collector, or payment status.</p></div>}
+  </div>
 }
 
 function PermanentMembershipDetails({ member }: { member: MemberRecord }) {
