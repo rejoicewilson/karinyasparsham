@@ -5,7 +5,7 @@ import {
   AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Banknote, Bell, BookOpen, CalendarDays,
   Check, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Clock3, Download,
   Eye, EyeOff, FileCheck2, HeartHandshake, Home, IndianRupee, Landmark,
-  ListChecks, LockKeyhole, LogOut, Menu, MessageSquareText, MoreVertical, Paperclip, Pencil, Plus, Receipt,
+  ListChecks, LockKeyhole, LogOut, Menu, MoreVertical, Paperclip, Pencil, Phone, Plus, Receipt,
   Search, ShieldCheck, Smartphone, UserRound, Users, WalletCards, WifiOff, X,
   XCircle, type LucideIcon
 } from 'lucide-react'
@@ -384,7 +384,7 @@ function MemberDashboard({ session }: { session: Session }) {
   const target = member?.permanentTarget || 0
   return <div className="page-stack">
     <section className="member-summary band-green">
-      <div><span>Amount to give agent</span><strong>{<Money value={toGive} />}</strong><small>{memberDues.filter(d => d.required > d.collected).length} open obligations · {<Money value={awaiting} />} awaiting verification</small></div>
+      <div><span>Outstanding contributions</span><strong>{<Money value={toGive} />}</strong><small>{memberDues.filter(d => d.required > d.collected).length} open obligations · {<Money value={awaiting} />} awaiting verification</small></div>
       <button onClick={() => navigate('/member/dues')}>View outstanding <ChevronRight size={18} /></button>
     </section>
     <SectionHeading title="Permanent membership" action="View progress" onAction={() => navigate('/member/account')} />
@@ -393,9 +393,9 @@ function MemberDashboard({ session }: { session: Session }) {
       <Progress value={target ? permanentVerified / target * 100 : 0} />
       <p><BadgeCheck size={17} /> {<Money value={Math.max(target - permanentVerified, 0)} />} remaining to become permanent</p>
     </section>
-    <SectionHeading title="Recent helping requests" action="See all" onAction={() => navigate('/member/cases')} />
+    <SectionHeading title="Recent death cases" action={`See all (${cases.length})`} onAction={() => navigate('/member/cases')} />
     <div className="case-list">{cases.slice(0, 2).map(item => <CaseCard key={item.id} item={item} onClick={() => navigate(`/member/cases/${item.id}`)} memberDue={memberDues.find(d => d.caseId === item.id)} />)}</div>
-    {session.agent && <section className="agent-contact"><div className="avatar dark">{initials(session.agent.full_name)}</div><div><span>Your collection agent</span><strong>{session.agent.full_name}</strong><small>{session.talukName}{session.agent.phone ? ` · ${session.agent.phone}` : ''}</small></div><button disabled={!session.agent.phone} title={session.agent.phone ? `Call ${session.agent.full_name}` : 'Agent phone number is not configured'} aria-label="Contact agent" onClick={() => { if (session.agent?.phone) window.location.href = `tel:${session.agent.phone}` }}><MessageSquareText /></button></section>}
+    {session.agent && <section className="agent-contact"><div className="avatar dark">{initials(session.agent.full_name)}</div><div><span>Your collection agent</span><strong>{session.agent.full_name}</strong><small>{session.talukName}{session.agent.phone ? ` · ${session.agent.phone}` : ''}</small></div><button disabled={!session.agent.phone} title={session.agent.phone ? `Call ${session.agent.full_name}` : 'Agent phone number is not configured'} aria-label={`Call ${session.agent.full_name}`} onClick={() => { if (session.agent?.phone) window.location.href = `tel:${session.agent.phone}` }}><Phone /></button></section>}
   </div>
 }
 
@@ -1428,7 +1428,7 @@ function CaseCard({ item, onClick, memberDue, agentTaluk }: { item: CaseRecord; 
   const collected = agentTaluk !== undefined ? progress?.collected || 0 : item.collected
   const verified = agentTaluk !== undefined ? progress?.verified || 0 : item.verified
   const pct = required ? Math.min((collected / required) * 100, 100) : 0
-  return <article className="case-card" role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}><div className="case-card-main"><CasePhoto item={item} /><div><span className="case-number">{item.caseNumber}</span><h3>{item.name}</h3><p><CalendarDays /> {item.deathDate} · {item.taluk}</p></div><ChevronRight className="chevron" /></div>{memberDue ? <div className="case-obligation"><div><span>Your contribution</span><strong>{<Money value={memberDue.required} />}</strong></div><Status value={getMoneyStatus(memberDue.required, memberDue.collected, memberDue.verified)} /></div> : <div className="case-progress"><div><span>{agentTaluk !== undefined ? 'Taluk collected' : 'Collection progress'}</span><strong>{Math.round(pct)}%</strong></div><Progress value={pct} /><small>{<Money value={collected} />} collected · {<Money value={verified} />} verified</small></div>}</article>
+  return <article className="case-card" role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }}><div className="case-card-main"><CasePhoto item={item} /><div><span className="case-number">{item.caseNumber}</span><h3>{item.name}</h3><p><CalendarDays /> {item.deathDate} · {item.taluk}</p></div><ChevronRight className="chevron" /></div>{memberDue ? <div className="case-obligation"><div><span>Outstanding</span><strong>{<Money value={Math.max(memberDue.required - memberDue.collected, 0)} />}</strong></div><Status value={getMoneyStatus(memberDue.required, memberDue.collected, memberDue.verified)} /></div> : <div className="case-progress"><div><span>{agentTaluk !== undefined ? 'Taluk collected' : 'Collection progress'}</span><strong>{Math.round(pct)}%</strong></div><Progress value={pct} /><small>{<Money value={collected} />} collected · {<Money value={verified} />} verified</small></div>}</article>
 }
 
 function LedgerBreakdown({ required, collected, verified }: { required: number; collected: number; verified: number }) {
