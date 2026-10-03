@@ -673,11 +673,35 @@ function CaseWhatsAppList({ item }: { item: CaseRecord }) {
 }
 
 function MemberDues() {
-  const { memberDues } = useAppData()
-  const [filter, setFilter] = useState<'Outstanding' | 'All'>('Outstanding')
+  const navigate = useNavigate()
+  const { cases, memberDues } = useAppData()
+  const [filter, setFilter] = useState<'Outstanding' | 'Awaiting' | 'Verified' | 'All'>('Outstanding')
   const open = memberDues.filter(d => d.required - d.collected > 0)
-  const visible = filter === 'Outstanding' ? open : memberDues
-  return <div className="page-stack"><section className="due-total"><div><span>Outstanding amount</span><strong>{<Money value={open.reduce((s, d) => s + d.required - d.collected, 0)} />}</strong></div><IndianRupee /></section><div className="filter-row"><button className={`chip ${filter === 'Outstanding' ? 'active' : ''}`} onClick={() => setFilter('Outstanding')}>Outstanding ({open.length})</button><button className={`chip ${filter === 'All' ? 'active' : ''}`} onClick={() => setFilter('All')}>All obligations ({memberDues.length})</button></div>{visible.length ? <div className="dues-list">{visible.map(d => <article key={d.caseId}><div className="item-top"><div><span>{d.caseNumber}</span><h3>{d.name}</h3></div><Status value={getMoneyStatus(d.required, d.collected, d.verified)} /></div><LedgerBreakdown required={d.required} collected={d.collected} verified={d.verified} /></article>)}</div> : <div className="empty-review"><BadgeCheck /><h3>No outstanding obligations</h3><p>Completed obligations remain available under All obligations.</p></div>}</div>
+  const awaiting = memberDues.filter(d => d.collected - d.verified > 0)
+  const verified = memberDues.filter(d => d.required > 0 && d.verified >= d.required)
+  const visible = filter === 'Outstanding' ? open : filter === 'Awaiting' ? awaiting : filter === 'Verified' ? verified : memberDues
+  const outstandingAmount = open.reduce((sum, due) => sum + due.required - due.collected, 0)
+  const awaitingAmount = awaiting.reduce((sum, due) => sum + due.collected - due.verified, 0)
+  const filters = [
+    { value: 'Outstanding', label: 'Outstanding', count: open.length },
+    { value: 'Awaiting', label: 'Awaiting verification', count: awaiting.length },
+    { value: 'Verified', label: 'Verified', count: verified.length },
+    { value: 'All', label: 'All obligations', count: memberDues.length },
+  ] as const
+  return <div className="page-stack">
+    <section className="metric-grid member-due-metrics">
+      <Metric icon={IndianRupee} label="Outstanding contributions" value={<Money value={outstandingAmount} />} detail={`Across ${open.length} obligations`} tone="red" />
+      <Metric icon={Clock3} label="Awaiting verification" value={<Money value={awaitingAmount} />} detail={`Across ${awaiting.length} obligations`} tone="amber" />
+    </section>
+    <div className="filter-row">{filters.map(item => <button key={item.value} className={`chip ${filter === item.value ? 'active' : ''}`} onClick={() => setFilter(item.value)}>{item.label} ({item.count})</button>)}</div>
+    {visible.length ? <div className="dues-list">{visible.map(d => {
+      const caseRecord = cases.find(item => item.id === d.caseId)
+      return <article className="interactive" key={d.caseId} role="button" tabIndex={0} onClick={() => navigate(`/member/cases/${d.caseId}`)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate(`/member/cases/${d.caseId}`) } }}>
+        <div className="item-top"><div><span>{d.caseNumber}</span><h3>{d.name}</h3>{caseRecord && <p className="meta-row"><CalendarDays /> {caseRecord.deathDate} · {caseRecord.taluk}</p>}</div><div className="due-card-status"><Status value={getMoneyStatus(d.required, d.collected, d.verified)} /><ChevronRight /></div></div>
+        <LedgerBreakdown required={d.required} collected={d.collected} verified={d.verified} />
+      </article>
+    })}</div> : <div className="empty-review"><BadgeCheck /><h3>No {filter.toLowerCase()} obligations</h3><p>Choose another payment-status filter to view the member ledger.</p></div>}
+  </div>
 }
 
 function MemberPayments({ collections }: { collections: CollectionRecord[] }) {
@@ -1441,7 +1465,7 @@ function CaseCard({ item, onClick, memberDue, memberView = false, agentTaluk }: 
 }
 
 function LedgerBreakdown({ required, collected, verified }: { required: number; collected: number; verified: number }) {
-  return <div className="ledger"><div><span>Required</span><strong>{<Money value={required} />}</strong></div><div><span>Collected</span><strong>{<Money value={collected} />}</strong></div><div><span>Awaiting</span><strong>{<Money value={collected - verified} />}</strong></div><div><span>Verified</span><strong>{<Money value={verified} />}</strong></div><div className="remaining"><span>Still to give agent</span><strong>{<Money value={required - collected} />}</strong></div></div>
+  return <div className="ledger"><div><span>Required</span><strong>{<Money value={required} />}</strong></div><div><span>Collected</span><strong>{<Money value={collected} />}</strong></div><div><span>Awaiting</span><strong>{<Money value={Math.max(collected - verified, 0)} />}</strong></div><div><span>Verified</span><strong>{<Money value={verified} />}</strong></div><div className="remaining"><span>Outstanding</span><strong>{<Money value={Math.max(required - collected, 0)} />}</strong></div></div>
 }
 
 function DepositRow({ deposit, admin = false, onClick, selected = false, action, actionLabel }: { deposit: DepositRecord; admin?: boolean; onClick?: () => void; selected?: boolean; action?: () => void; actionLabel?: string }) {

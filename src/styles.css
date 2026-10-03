@@ -276,9 +276,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .due-total > svg { width: 34px; height: 34px; color: var(--yellow); }
 .dues-list { display: grid; gap: 10px; }
 .dues-list > article { padding: 15px; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.dues-list > article.interactive { cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease; }
+.dues-list > article.interactive:hover { border-color: #afc5b6; box-shadow: 0 5px 14px rgba(27, 68, 43, .07); }
+.dues-list > article.interactive:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .item-top { display: flex; justify-content: space-between; gap: 10px; }
 .item-top span { color: var(--green); font-size: 9px; font-weight: 700; }
 .item-top h3 { font-size: 14px; }
+.item-top .meta-row { margin-top: 4px; color: var(--muted); font-weight: 400; }
+.due-card-status { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+.due-card-status > svg { width: 17px; color: #8a968e; }
 .payment-list { display: grid; background: white; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .payment-list article { min-height: 82px; border-bottom: 1px solid #edf0ee; padding: 13px; display: flex; align-items: center; gap: 11px; }
 .payment-list article:last-child { border-bottom: 0; }
