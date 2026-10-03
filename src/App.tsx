@@ -752,7 +752,7 @@ function MemberPayments({ collections }: { collections: CollectionRecord[] }) {
 function PermanentMembershipDetails({ member }: { member: MemberRecord }) {
   const verified = member.permanentVerified || 0, collected = member.permanentCollected || 0
   const target = member.permanentTarget || 0, remaining = Math.max(target - verified, 0)
-  return <><section className="permanent-hero"><div className="permanent-seal"><ShieldCheck /></div><span>Verified progress</span><strong>{<Money value={verified} />}</strong><p>of {<Money value={target} />} target</p><Progress value={target ? verified / target * 100 : 0} /><small>{<Money value={remaining} />} remaining</small></section><section className="metric-grid compact"><Metric icon={IndianRupee} label="Collected" value={<Money value={collected} />} tone="blue" /><Metric icon={Clock3} label="Awaiting verification" value={<Money value={Math.max(collected - verified, 0)} />} tone="amber" /><Metric icon={ShieldCheck} label="Membership" value={member.membership || 'Regular'} /></section><p className="subtle">{collected ? <><Money value={collected} /> has been recorded toward permanent membership.</> : 'No permanent-membership instalments have been recorded.'}</p></>
+  return <><section className="progress-section permanent-progress"><div className="progress-copy"><div><span>Verified</span><strong><Money value={verified} /></strong></div><div><span>Target</span><strong><Money value={target} /></strong></div></div><Progress value={target ? verified / target * 100 : 0} /><p><ShieldCheck /> <Money value={remaining} /> remaining to become permanent</p></section><section className="metric-grid member-permanent-metrics"><Metric icon={IndianRupee} label="Collected" value={<Money value={collected} />} tone="blue" /><Metric icon={Clock3} label="Awaiting verification" value={<Money value={Math.max(collected - verified, 0)} />} tone="amber" /><Metric icon={ShieldCheck} label="Membership" value={member.membership || 'Regular'} /></section></>
 }
 
 function AgentCollections({ online, collections, setCollections: _setCollections, notify, reload }: { online: boolean; collections: CollectionRecord[]; setCollections: (c: CollectionRecord[]) => void; notify: (message: string) => void; reload: () => Promise<void> }) {
@@ -1133,7 +1133,24 @@ function AccountPage({ session, notify }: { session: Session; notify: (message: 
   const member = role === 'member' ? members[0] : undefined
   const [changingPassword, setChangingPassword] = useState(false)
   const subtitle = role === 'member' ? [p.memberCode, p.talukName && `${p.talukName} Taluk`].filter(Boolean).join(' · ') : role === 'agent' ? ['Collection agent', p.talukName && `${p.talukName} Taluk`].filter(Boolean).join(' · ') : 'System administrator'
-  return <div className="page-stack"><section className="account-head"><div className="avatar xl">{initials(p.name)}</div><h2>{p.name}</h2><p>{subtitle}</p><Status value="Active" /></section>{member && <><SectionHeading title="Permanent membership progress" /><PermanentMembershipDetails member={member} /></>}<section className="settings-list"><button onClick={() => setChangingPassword(true)}><LockKeyhole /><span><strong>Change password</strong><small>Update your account password</small></span><ChevronRight /></button></section><div className="profile-data"><span>Full name</span><strong>{p.name}</strong><span>Login ID</span><strong>{p.loginId}</strong><span>Role</span><strong>{role[0].toUpperCase() + role.slice(1)}</strong>{p.talukName && <><span>Taluk</span><strong>{p.talukName}</strong></>}</div>{changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} onChanged={() => { setChangingPassword(false); notify('Password changed successfully.') }} />}</div>
+  if (member) return <div className="page-stack member-account-page">
+    <section className="account-head member-account-head"><div className="avatar large">{initials(p.name)}</div><div><h2>{p.name}</h2><p>Karunya Sparsham member</p></div><Status value={member.status} /></section>
+    <SectionHeading title="Member details" />
+    <dl className="member-account-details">
+      <div><dt>Member code</dt><dd>{member.code}</dd></div>
+      <div><dt>ARD number</dt><dd>{member.ardNo || 'Not recorded'}</dd></div>
+      <div><dt>Phone number</dt><dd>{member.phone || 'Not recorded'}</dd></div>
+      <div><dt>Taluk</dt><dd>{member.taluk}</dd></div>
+      <div><dt>Joining date</dt><dd>{member.joinedOn ? dateText(member.joinedOn) : 'Not recorded'}</dd></div>
+      <div><dt>Login ID</dt><dd>{p.loginId}</dd></div>
+    </dl>
+    <SectionHeading title="Security" />
+    <section className="settings-list"><button onClick={() => setChangingPassword(true)}><LockKeyhole /><span><strong>Change password</strong><small>Replace your current account password</small></span><ChevronRight /></button></section>
+    <SectionHeading title="Permanent membership" />
+    <PermanentMembershipDetails member={member} />
+    {changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} onChanged={() => { setChangingPassword(false); notify('Password changed successfully.') }} />}
+  </div>
+  return <div className="page-stack"><section className="account-head"><div className="avatar xl">{initials(p.name)}</div><h2>{p.name}</h2><p>{subtitle}</p><Status value="Active" /></section><section className="settings-list"><button onClick={() => setChangingPassword(true)}><LockKeyhole /><span><strong>Change password</strong><small>Update your account password</small></span><ChevronRight /></button></section><div className="profile-data"><span>Full name</span><strong>{p.name}</strong><span>Login ID</span><strong>{p.loginId}</strong><span>Role</span><strong>{role[0].toUpperCase() + role.slice(1)}</strong>{p.talukName && <><span>Taluk</span><strong>{p.talukName}</strong></>}</div>{changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} onChanged={() => { setChangingPassword(false); notify('Password changed successfully.') }} />}</div>
 }
 
 function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {

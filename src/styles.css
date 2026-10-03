@@ -421,6 +421,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 .account-head { display: grid; justify-items: center; text-align: center; padding: 25px; background: white; border: 1px solid var(--line); border-radius: 6px; }
 .account-head h2 { font-size: 20px; margin-top: 9px; }
 .account-head p { color: var(--muted); font-size: 11px; margin: 3px 0 10px; }
+.member-account-head { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; justify-items: initial; gap: 15px; padding: 17px 19px; text-align: left; }
+.member-account-head h2 { margin: 0; font-size: 18px; }
+.member-account-head p { margin: 3px 0 0; }
+.member-account-details { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: white; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.member-account-details > div { min-width: 0; padding: 14px 16px; border-bottom: 1px solid #edf0ee; }
+.member-account-details > div:nth-child(odd) { border-right: 1px solid #edf0ee; }
+.member-account-details > div:nth-last-child(-n + 2) { border-bottom: 0; }
+.member-account-details dt { color: var(--muted); font-size: 10px; margin-bottom: 4px; }
+.member-account-details dd { margin: 0; color: var(--ink); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.permanent-progress { padding: 16px 18px; }
+.permanent-progress .progress-copy { margin-bottom: 10px; }
 .settings-list { background: white; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .settings-list button { width: 100%; min-height: 70px; border: 0; border-bottom: 1px solid #edf0ee; background: white; display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px 14px; }
 .settings-list button:last-child { border-bottom: 0; }
@@ -564,6 +575,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
 
 @media (min-width: 700px) {
   .payment-history-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .member-account-details, .member-permanent-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .member-account-details > div:nth-child(odd) { border-right: 0; }
+  .member-account-details > div:not(:nth-child(3n)) { border-right: 1px solid #edf0ee; }
+  .member-account-details > div:nth-last-child(-n + 3) { border-bottom: 0; }
   .login-page { grid-template-columns: minmax(300px, 46%) 1fr; }
   .login-brand { display: flex; position: relative; overflow: hidden; flex-direction: column; justify-content: center; align-items: center; gap: 20px; color: white; background: #123a22; }
   .login-brand::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 40%, rgba(255,255,255,.1), transparent 45%), linear-gradient(150deg, transparent 58%, rgba(233,173,20,.12) 58%); }
@@ -638,6 +653,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--green); box-shad
   .organization-actions button { min-width: 0; padding: 0 6px; }
   .member-summary { align-items: stretch; flex-direction: column; }
   .member-summary button { width: fit-content; }
+  .member-account-head { grid-template-columns: auto minmax(0, 1fr); padding: 15px; }
+  .member-account-head .status { grid-column: 2; }
+  .member-account-details { grid-template-columns: 1fr; }
+  .member-account-details > div, .member-account-details > div:nth-child(odd) { border-right: 0; border-bottom: 1px solid #edf0ee; }
+  .member-account-details > div:last-child { border-bottom: 0; }
   .metric { padding: 13px 10px; gap: 8px; }
   .metric-icon { width: 32px; height: 32px; }
   .metric-icon svg { width: 17px; }
